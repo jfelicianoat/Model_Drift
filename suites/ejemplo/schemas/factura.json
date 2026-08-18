@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["numero", "fecha", "cliente", "base_imponible", "iva", "total"],
+  "additionalProperties": false,
+  "properties": {
+    "numero": { "type": "string" },
+    "fecha": { "type": "string" },
+    "cliente": { "type": "string" },
+    "base_imponible": { "type": "number" },
+    "iva": { "type": "number" },
+    "total": { "type": "number" }
+  }
+}

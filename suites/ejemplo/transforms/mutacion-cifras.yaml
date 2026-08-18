@@ -1,0 +1,7 @@
+# Variantes escritas a mano de la transformación `mutacion`.
+#
+# La relación asociada es `cambio_exigido`: si el modelo responde lo mismo que
+# al prompt original, ha reconocido el patrón sin leer la cifra.
+variants:
+  - "El total de una factura con base imponible de 800 € y un IVA del 4 % es:"
+  - "El total de una factura con base imponible de 2.500 € y un IVA del 21 % es:"

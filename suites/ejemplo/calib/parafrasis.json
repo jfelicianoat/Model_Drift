@@ -1,0 +1,10 @@
+{
+  "threshold": 0.87,
+  "criterion": "f1",
+  "f1": 0.91,
+  "precision": 0.93,
+  "recall": 0.89,
+  "n_points": 120,
+  "embedder_identity": "ollama/local/bge-m3",
+  "nota": "Umbral obtenido maximizando F1 sobre 120 pares de respuestas etiquetadas a mano como equivalentes o no equivalentes. Regenerar con `calibrate_threshold` si cambia el modelo de embeddings: el umbral NO es transferible entre instrumentos."
+}

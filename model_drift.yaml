@@ -1,0 +1,29 @@
+# Configuración de Model_Drift.
+#
+# El token NO se escribe aquí: se lee de la variable de entorno
+# MODEL_DRIFT_BROKER_TOKEN. El Broker rota el suyo en cada arranque salvo que se
+# fije desde fuera, así que guardarlo en disco sería a la vez un secreto sin
+# necesidad y un valor caduco la mitad del tiempo.
+
+# Broker de trabajo. Se puede sobrescribir con MODEL_DRIFT_BROKER_URL.
+broker_url: http://192.168.1.52:8765
+
+database: state/model_drift.sqlite
+reports_dir: informes
+suites_dir: suites
+relations_dir: relaciones
+
+# Menos de 5 repeticiones no permite concluir nada: el contraste exacto tiene un
+# suelo por encima del nivel exigido y todos los casos salen "indeterminado".
+repetitions: 5
+temperature: 0.0
+seed: 1234
+timeout_seconds: 300
+poll_interval_seconds: 2.0
+
+# Ejecutar código generado por un modelo es una decisión del operador.
+allow_code_execution: false
+# El Broker 2.9 ya admite excluir el tráfico de medición de su router
+# adaptativo, así que esto no hace falta. Solo se pone a true para lanzar
+# contra un Broker antiguo aceptando que la tirada altere sus estadísticas.
+accept_learning_contamination: false

@@ -1,0 +1,34 @@
+# Suite de ejemplo. Sirve de plantilla y de documentación ejecutable.
+#
+# Estructura:
+#   suite.yaml            esta configuración
+#   casos/*.yaml          los casos, repartidos por temas
+#   schemas/*.json        esquemas JSON referenciados con fixture://
+#   transforms/*.yaml     variantes escritas a mano de las transformaciones
+#                         que no se pueden generar de forma determinista
+#   calib/*.json          procedencia de cada umbral de similitud
+#
+# Todo lo que se referencie con `fixture://` entra en el manifiesto por su
+# hash: si cambia, cambia el instrumento de medida y las tiradas dejan de ser
+# comparables. Es deliberado.
+
+id: ejemplo-facturacion
+version: "1"
+description: >
+  Suite de demostración sobre extracción de datos de facturas. Cubre las
+  familias A (oráculo determinista), D (metamórficas), E (obediencia a
+  instrucciones) y F (abstención).
+
+# Cómo se binariza un caso a partir de sus N repeticiones.
+#   todas   -> el caso solo cuenta como superado si TODAS las repeticiones pasan.
+#              Es el defecto para oráculos deterministas: un caso que falla 3 de
+#              10 veces no está aprobado.
+#   mayoria -> más de la mitad. Pierde información a propósito; declararlo es
+#              una decisión, no un descuido.
+case_pass_rule: todas
+
+unstable:
+  # Acuerdo mínimo entre repeticiones para que el caso cuente como detector.
+  # Por debajo de esto su propio ruido tapa cualquier señal y el caso se marca
+  # indeterminado y se cuenta aparte en el informe.
+  min_stability: 0.8

@@ -1,0 +1,37 @@
+# Política de regresión. Sin ella no hay veredicto operativo, solo números.
+#
+# No existe un score global: distintas métricas tienen distinta severidad y eso
+# lo decide quien conoce el producto. Cuando unas mejoran y otras empeoran, el
+# veredicto es `trade_off_detected` con el desglose, y la decisión es humana.
+#
+# Los umbrales de abajo son EJEMPLOS. Cada suite fija los suyos con
+# justificación: no hay valores universales.
+
+blocking:
+  # La conformidad de esquema no admite ninguna caída: un JSON que deja de
+  # validar rompe al consumidor aunque el contenido sea correcto.
+  pass_rate:
+    max_drop_pp: 0
+    minimum_practical_effect_pp: 2
+
+warning:
+  latency_ms:
+    higher_is_better: false
+    max_increase_pct: 15
+    # Por debajo de 100 ms de diferencia nadie lo nota: es el efecto mínimo de
+    # interés (SESOI) y evita alarmas por cambios reales pero irrelevantes.
+    minimum_practical_effect: 100
+  cost_usd:
+    higher_is_better: false
+    max_increase_pct: 10
+    minimum_practical_effect: 0.001
+  output_tokens:
+    higher_is_better: false
+    max_increase_pct: 30
+    minimum_practical_effect: 50
+
+# Tasa de falsos descubrimientos para la corrección de comparaciones múltiples.
+fdr: 0.05
+# Por encima de este porcentaje de casos indeterminados, la tirada no concluye:
+# un veredicto calculado sobre media suite no es un veredicto.
+max_indeterminate_ratio: 0.3

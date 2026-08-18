@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verificar:
+    # Se prueba en los dos sistemas por el mismo motivo que el Broker: el
+    # desarrollo alterna entre máquinas Windows y la CI de referencia es Linux.
+    # Las rutas y la codificación son justo donde se rompen las cosas.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Instalar
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Ruff
+        run: python -m ruff check .
+
+      - name: Mypy
+        run: python -m mypy
+
+      - name: Pruebas y cobertura
+        # El umbral vive en pyproject (fail_under). No se baja para dejar pasar
+        # una entrega: si una entrega no llega, le faltan pruebas.
+        run: python -m pytest tests/ --cov=model_drift --cov-report=term-missing
+
+      - name: Comprobar que la suite de ejemplo sigue cargando
+        run: |
+          python -c "from model_drift.cases import load_suite; s = load_suite('suites/ejemplo'); print(s.id, s.short_hash(), len(s.cases), 'casos')"
+          python -c "from model_drift.metamorphic import load_relations; print(sorted(load_relations('relaciones')))"
+          python -c "from model_drift.policy import RegressionPolicy; print(sorted(RegressionPolicy.from_file('politica-ejemplo.yaml').metrics))"

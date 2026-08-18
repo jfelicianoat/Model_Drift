@@ -1,0 +1,64 @@
+# Familia A — oráculo determinista.
+#
+# La deriva de formato es el vector número uno entre versiones: la nueva empieza
+# a envolver el JSON en vallas de código, renombra una clave o añade un campo.
+# Nada de eso falla ninguna prueba de "corrección" y sin embargo rompe el
+# producto que consume la salida.
+
+- id: factura-json-01
+  description: Extracción estructurada de una factura simple.
+  tags: [formato, json, critico]
+  required_capabilities: [json_mode]
+  system: |
+    Eres un extractor de datos. Devuelves SOLO un objeto JSON, sin explicaciones
+    y sin vallas de código.
+  prompt: |
+    Extrae los datos de esta factura:
+
+    FACTURA Nº 2026/0417
+    Fecha: 14/03/2026
+    Cliente: Talleres Mendoza S.L.
+    Base imponible: 1.033,06 €
+    IVA (21%): 216,94 €
+    TOTAL: 1.250,00 €
+  assertions:
+    - type: json_schema
+      schema_ref: fixture://schemas/factura.json
+    - type: field_equals
+      path: $.total
+      value: 1250.00
+      tolerance: 0.01
+    - type: field_equals
+      path: $.numero
+      value: "2026/0417"
+
+- id: factura-json-02
+  description: La misma extracción con un importe en formato distinto.
+  tags: [formato, json]
+  required_capabilities: [json_mode]
+  system: Devuelves SOLO un objeto JSON.
+  prompt: |
+    Extrae los datos de esta factura:
+
+    FACTURA Nº 2026/0418
+    Fecha: 15/03/2026
+    Cliente: Distribuciones Arán
+    Base imponible: 500.00
+    IVA (21%): 105.00
+    TOTAL: 605.00
+  assertions:
+    - type: json_schema
+      schema_ref: fixture://schemas/factura.json
+    - type: field_equals
+      path: $.total
+      value: 605.00
+      tolerance: 0.01
+
+- id: brevedad-01
+  description: Obediencia a una restricción de longitud del system prompt.
+  tags: [instrucciones, verbosidad]
+  system: Responde SIEMPRE en 20 palabras o menos.
+  prompt: Explícame qué es el IVA repercutido.
+  assertions:
+    - type: length
+      max_words: 20

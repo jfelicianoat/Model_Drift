@@ -1,0 +1,9 @@
+# Variantes de paráfrasis escritas a mano.
+#
+# NO se generan con un modelo a propósito: eso metería un segundo instrumento
+# sin calibrar dentro de la medición, y una deriva del generador se confundiría
+# con una deriva del modelo evaluado.
+variants:
+  - "¿Qué importe total sale de una base de 800 euros aplicando un IVA del 21 %?"
+  - "Calcula el total: base imponible 800 €, tipo de IVA 21 %."
+  - "Sobre 800 € de base, ¿cuánto suma la factura con el 21 % de IVA?"

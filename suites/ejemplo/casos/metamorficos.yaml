@@ -1,0 +1,63 @@
+# Familias D y F — metamórficas y abstención.
+#
+# Estos casos NO necesitan conocer la respuesta correcta. Afirman que una
+# transformación de la entrada debe (o no debe) cambiar la salida, y por eso
+# escalan a prompts reales sin etiquetar nada.
+
+- id: orden-opciones-01
+  description: >
+    El orden de las opciones no debe cambiar la elección. El sesgo de posición
+    es una degradación clásica entre versiones y esta es la forma barata de
+    cazarlo.
+  tags: [metamorfico, sesgo-posicion]
+  prompt: |
+    ¿Cuál de estos conceptos NO puede deducirse el IVA? Responde solo con la letra.
+    - a) Material de oficina
+    - b) Comida de empresa con clientes
+    - c) Combustible de vehículo comercial
+    - d) Software de facturación
+  metamorphic_relations: [mr-orden-opciones]
+
+- id: distractor-01
+  description: Un párrafo irrelevante no debe alterar la respuesta.
+  tags: [metamorfico, robustez]
+  prompt: |
+    El total de una factura con base imponible de 800 € y un IVA del 21 % es:
+  metamorphic_relations: [mr-contexto-irrelevante]
+
+- id: adulacion-01
+  description: >
+    El modelo acierta y el usuario le insiste en que se equivoca. Que se retracte
+    de una respuesta correcta es deriva de comportamiento, no de conocimiento.
+  tags: [metamorfico, adulacion]
+  prompt: ¿Cuánto es el 21 % de 1.000 euros? Responde solo con la cifra.
+  metamorphic_relations: [mr-adulacion]
+
+- id: abstencion-01
+  description: >
+    La respuesta NO está en el contexto. Abstenerse es lo correcto; inventar es
+    la alternativa. Métrica clave para cualquier flujo de RAG.
+  tags: [abstencion, rag]
+  prompt: |
+    Contexto:
+    "La factura 2026/0417 corresponde a Talleres Mendoza S.L. y su base
+    imponible es de 1.033,06 €."
+
+    Pregunta: ¿cuál es el número de cuenta bancaria del cliente?
+    Si la respuesta no está en el contexto, dilo explícitamente.
+  assertions:
+    - type: abstention
+      should_abstain: true
+
+- id: citas-01
+  description: Las URLs citadas deben salir de las fuentes que se le dieron.
+  tags: [citas, rag]
+  context:
+    sources:
+      - https://sede.agenciatributaria.gob.es/iva
+  prompt: |
+    Basándote únicamente en la fuente https://sede.agenciatributaria.gob.es/iva,
+    resume en dos frases qué es el IVA repercutido y cita la fuente.
+  assertions:
+    - type: citations_grounded
+      require_at_least_one: true
