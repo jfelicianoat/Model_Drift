@@ -2,7 +2,12 @@
 
 Detecta si los prompts de un producto **siguen comportándose igual** cuando cambia el modelo o su configuración de ejecución.
 
-Cuarto componente del TFM, junto a [AI_Broker](../AI_Broker), Knowledge_Orchestrator y ChatyGPT. Plan completo en [`../docs/Model_Drift_Plan.md`](../docs/Model_Drift_Plan.md); lo que necesita del Broker, en [`../AI_Broker/docs/Evaluation_Contract.md`](../AI_Broker/docs/Evaluation_Contract.md).
+Componente de evaluación del TFM, junto a [AI_Broker](../AI_Broker),
+[Knowledge_Orchestrator](../Knowledge_Orchestrator) y [ChatyGPT](../ChatyGPT). El plan
+histórico está en [`../docs/Model_Drift_Plan.md`](../docs/Model_Drift_Plan.md); la
+arquitectura vigente y el contrato que consume están documentados localmente en
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) y
+[`docs/BROKER_COMPATIBILITY.md`](docs/BROKER_COMPATIBILITY.md).
 
 Un benchmark público dice qué modelo es mejor en general. Model_Drift responde otra cosa:
 
@@ -180,7 +185,9 @@ Recibe `A` y `B` y nada más: sin nombres de modelo, sin saber cuál es la versi
 
 ## Estado actual
 
-Fases 0 a 6 del plan implementadas: motor de ejecución, oráculos, metamórficas, estadística, política, juez e informes. Fase 5 (agéntico) y Fase 7 (deriva no explicada) quedan pendientes.
+Implementadas las fases 0–4 y 6 del plan: motor de ejecución, oráculos, metamórficas,
+estadística, política, juez e informes. La fase 5 (evaluación agéntica completa) y la fase 7
+(clasificación de deriva no explicada) quedan pendientes.
 
 **Lo que hoy NO se tiene, y el manifiesto lo declara en cada tirada:**
 
@@ -188,7 +195,9 @@ Fases 0 a 6 del plan implementadas: motor de ejecución, oráculos, metamórfica
 - Sin identidad técnica del modelo → la huella es solo declarada: no se puede afirmar que dos tiradas usaron el mismo binario ni la misma plantilla de chat.
 - Sin marcador de exclusión → la tirada altera las estadísticas del router del Broker.
 
-Los tres son los Cambios 1, 2 y 4 de `Evaluation_Contract.md`, entrega independiente del Broker.
+El cliente 2.9 ya consume semilla, telemetría, identidad tipada y exclusión del aprendizaje
+cuando el despliegue las anuncia. La ausencia de una garantía sigue registrándose como
+ausencia; implementar el campo no demuestra por sí solo determinismo o identidad remota.
 
 ## Desarrollo
 
