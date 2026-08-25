@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from model_drift.broker_client import BrokerClient
 from model_drift.broker_contracts import ModelCatalogEntry
@@ -31,6 +32,7 @@ from model_drift.comparison import RunResults, compare_runs
 from model_drift.config import AppConfig
 from model_drift.db import Database
 from model_drift.domain import CaseOutcome, RunVerdict
+from model_drift.external_treatments import load_external_treatments
 from model_drift.manifest import RunManifest
 from model_drift.metamorphic import load_relations
 from model_drift.policy import RegressionPolicy
@@ -239,6 +241,29 @@ def cmd_comparar(args: argparse.Namespace, config: AppConfig) -> int:
     return EXIT_OK
 
 
+def cmd_evaluar_tratamientos(args: argparse.Namespace, config: AppConfig) -> int:
+    """Compara dos artefactos externos sin leer bases de datos ajenas."""
+    if Path(args.informe).exists():
+        raise ValueError("refusing to replace an existing external-treatment report")
+    _plan, base, candidata = load_external_treatments(args.plan)
+    politica = RegressionPolicy.from_file(args.politica) if args.politica else RegressionPolicy()
+    informe = compare_runs(base, candidata, policy=politica)
+
+    print(render_text_summary(informe))
+    destino = write_comparison(
+        informe,
+        args.informe,
+        titulo=args.titulo or "Tratamientos externos · R3 frente a R4",
+        baseline_label=f"{base.run_id} · R3",
+        candidate_label=f"{candidata.run_id} · R4",
+        manifest=candidata.manifest,
+    )
+    print(f"\nInforme HTML: {destino}")
+    if informe.verdict and informe.verdict.verdict is RunVerdict.blocked:
+        return EXIT_BLOCKED
+    return EXIT_OK
+
+
 def cmd_tiradas(args: argparse.Namespace, config: AppConfig) -> int:
     with Database(config.database) as db:
         filas = db.runs(limit=args.limite)
@@ -315,6 +340,15 @@ def build_parser() -> argparse.ArgumentParser:
     comparar.add_argument("--informe", help="ruta del informe HTML a generar")
     comparar.add_argument("--titulo")
 
+    externos = subparsers.add_parser(
+        "evaluar-tratamientos",
+        help="compara artefactos R3/R4 calculados por Local AI Lab",
+    )
+    externos.add_argument("--plan", required=True, help="plan v2 sellado de tratamientos externos")
+    externos.add_argument("--informe", required=True, help="ruta nueva del informe HTML")
+    externos.add_argument("--politica", help="fichero de regression_policy")
+    externos.add_argument("--titulo")
+
     tiradas = subparsers.add_parser("tiradas", help="lista las tiradas guardadas")
     tiradas.add_argument("--limite", type=int, default=25)
 
@@ -336,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
         "modelos": cmd_modelos,
         "ejecutar": cmd_ejecutar,
         "comparar": cmd_comparar,
+        "evaluar-tratamientos": cmd_evaluar_tratamientos,
         "tiradas": cmd_tiradas,
         "potencia": cmd_potencia,
     }

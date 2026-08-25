@@ -50,6 +50,7 @@ model_drift.bat modelos --proveedor ollama --despliegue local --solo-despachable
 model_drift.bat ejecutar suites\ejemplo --modelo ollama/local/qwen3:6b --relaciones relaciones --acepto-contaminar
 model_drift.bat tiradas
 model_drift.bat comparar run-A run-B --suite suites\ejemplo --politica politica-ejemplo.yaml --informe informes\x.html
+model_drift.bat evaluar-tratamientos --plan plan.json --informe informes\r3-r4.html
 
 arrancar_model_drift.bat
 ```
@@ -90,9 +91,20 @@ model-drift comparar run-XXXX run-YYYY \
     --suite suites/ejemplo \
     --politica politica-ejemplo.yaml \
     --informe informes/qwen36-vs-qwen38.html
+
+# R3/R4 ya calculados por Local AI Lab; no se accede a su base de datos
+model-drift evaluar-tratamientos \
+    --plan model-drift/plan.json \
+    --informe informes/r3-r4.html
 ```
 
 `comparar` devuelve código de salida **3** si la política declara la comparación como bloqueada, así que puede cortar una entrega desde CI. (No es 2: ese lo usa argparse para los errores de uso, y un guion no debe confundir un typo con una regresión.)
+
+`evaluar-tratamientos` implementa el contrato público v2 de Local AI Lab para benchmarks de
+retrieval y ejecuciones completas RAG. Verifica el SHA-256 del plan y los dos ZIP, además de
+suite, snapshot, profundidad `k`, estrategia, modelo servido, ausencia de fallback y casos
+antes de medir. Los artefactos se leen como datos, nunca se extraen y no se consulta la base
+de datos de la aplicación que los produjo.
 
 ### Medir sin degradar lo que se mide
 

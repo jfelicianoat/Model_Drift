@@ -51,8 +51,32 @@ METRIC_METAMORPHIC_PREFIX = "mr:"
 #: se informa como regresión. No es un detalle cosmético: invierte el signo de
 #: la conclusión sobre latencia, coste y verbosidad.
 LOWER_IS_BETTER_METRICS = frozenset(
-    {METRIC_LATENCY, METRIC_COST, METRIC_TOKENS, "latency_p95", "tokens_output"}
+    {
+        METRIC_LATENCY,
+        METRIC_COST,
+        METRIC_TOKENS,
+        "latency_p95",
+        "tokens_output",
+        "redundancy",
+    }
 )
+
+# Métricas de retrieval cuyo criterio está definido por el propio benchmark.
+# No son opiniones sobre el contenido generado: miden contra un ground truth
+# congelado y por eso pueden aportar dirección sin un juez externo.
+RETRIEVAL_METRICS = frozenset(
+    {
+        "recall_at_k",
+        "precision_at_k",
+        "hit_rate",
+        "reciprocal_rank",
+        "ndcg_at_k",
+        "source_coverage",
+        "redundancy",
+    }
+)
+
+EXTERNAL_DEFINED_METRICS = RETRIEVAL_METRICS | {"deterministic_pass"}
 
 
 def default_higher_is_better(metric: str) -> bool:
@@ -73,7 +97,9 @@ def is_binary_metric(metric: str) -> bool:
     para las continuas. Aplicar el primero a una latencia produce cuentas sin
     sentido, así que la distinción no es cosmética.
     """
-    return metric in {METRIC_PASS, METRIC_OUTPUT_MATCH} or metric.startswith(METRIC_METAMORPHIC_PREFIX)
+    return metric in {METRIC_PASS, METRIC_OUTPUT_MATCH, "deterministic_pass"} or metric.startswith(
+        METRIC_METAMORPHIC_PREFIX
+    )
 
 
 class ChangeStatus(str, Enum):
@@ -176,6 +202,10 @@ class CaseOutcome(BaseModel):
     is_not_applicable: bool = False
     not_applicable_reason: str | None = None
     values: list[float] = Field(default_factory=list)
+    #: Una medida determinista no necesita repeticiones para demostrar que el
+    #: valor observado cambió. La inferencia a otros casos sigue dependiendo
+    #: del tamaño de la suite; esta bandera solo describe el caso medido.
+    measurement_deterministic: bool = False
 
     @property
     def is_usable(self) -> bool:

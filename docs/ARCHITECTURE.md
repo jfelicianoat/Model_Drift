@@ -24,6 +24,20 @@ resultados por repetición
 agregación por caso ──► comparación pareada ──► política ──► HTML / salida CI
 ```
 
+La entrada para tratamientos ya calculados comparte el motor, pero no el ejecutor:
+
+```text
+plan v2 sellado ──► ZIP R3/R4 inmutables ──► importador externo
+                                              │
+                                              ▼
+                                comparación pareada ──► HTML / salida CI
+```
+
+El importador acepta informes deterministas de retrieval y ejecuciones completas RAG de
+Local AI Lab, valida sus límites e identidades y los convierte a `RunResults`. No conoce su
+SQLite, su almacén CAS ni su implementación interna; las rutas y huellas llegan explícitamente
+en el plan.
+
 ## Capas
 
 | Capa | Responsabilidad | No debe hacer |
@@ -63,4 +77,3 @@ python -m pytest tests -q
 python -m ruff check .
 python -m mypy
 ```
-

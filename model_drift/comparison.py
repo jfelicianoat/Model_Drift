@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from model_drift.cases import Case, Suite
 from model_drift.domain import (
+    EXTERNAL_DEFINED_METRICS,
     METRIC_COST,
     METRIC_LATENCY,
     METRIC_TOKENS,
@@ -52,7 +53,10 @@ from model_drift.taxonomy import classify_change
 
 #: Métricas operativas: tienen dirección definida de antemano y por tanto
 #: aportan evidencia de nivel 2 por sí mismas, sin oráculo ni juez.
-OPERATIONAL_METRICS = frozenset({METRIC_LATENCY, METRIC_COST, METRIC_TOKENS, "latency_p95", "tokens_output"})
+OPERATIONAL_METRICS = frozenset(
+    {METRIC_LATENCY, METRIC_COST, METRIC_TOKENS, "latency_p95", "tokens_output"}
+    | EXTERNAL_DEFINED_METRICS
+)
 
 
 @dataclass
@@ -205,6 +209,8 @@ def _per_case_p_value(metric: str, baseline: CaseOutcome, candidate: CaseOutcome
     """
     if baseline.case_score is None or candidate.case_score is None:
         return 1.0
+    if baseline.measurement_deterministic and candidate.measurement_deterministic:
+        return 0.0 if baseline.case_score != candidate.case_score else 1.0
     n_base, n_cand = baseline.repetitions, candidate.repetitions
     if n_base == 0 or n_cand == 0:
         return 1.0
@@ -229,6 +235,8 @@ def _is_underpowered(metric: str, baseline: CaseOutcome, candidate: CaseOutcome,
     puede bajar. Reconocerlo evita el peor error posible aquí, que es informar
     un cambio total como «sin cambio observable».
     """
+    if baseline.measurement_deterministic and candidate.measurement_deterministic:
+        return False
     return minimum_attainable_p(
         baseline.repetitions, candidate.repetitions, binary=is_binary_metric(metric)
     ) > fdr
