@@ -15,6 +15,7 @@ antes contra un Broker en marcha.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -52,10 +53,31 @@ class FakeBroker:
     supports_invocation_telemetry: bool = True
     #: Qué dice el Broker que hizo con la semilla: sent | unsupported.
     seed_status: str = "sent"
+    #: Contrato 2.10: `contractual` por invocación y `role`/`status` enumerados
+    #: (§8.1). A False simula un Broker 2.9, que no se pronuncia.
+    supports_invocation_contract: bool = True
+    #: Contrato 2.10: eco `{requested, effective}` por invocación (§8.5).
+    supports_prompt_compression_echo: bool = True
+    #: Contrato 2.10: /artifacts y el entregable marcado con `final: true`.
+    supports_task_artifacts: bool = True
+    supports_canonical_artifacts: bool = True
+    #: Contrato 2.10: si este Broker sondea otros modelos bajo el mismo
+    #: `task_id` (§8.4) y si acepta que se apague desde la petición.
+    performs_auxiliary_invocations: bool = True
+    supports_auxiliary_optout: bool = True
+    #: Poda que el Broker aplica DE VERDAD, pida lo que pida el cliente. Sirve
+    #: para simular el caso que el eco existe para destapar: se pidió `off` y se
+    #: comprimió igual.
+    effective_compression: str | None = None
+    #: Añade un `shadow_probe` (no contractual) DESPUÉS de la invocación real,
+    #: con otro modelo y otra huella. Es el caso que rompía la lectura por
+    #: «última invocación» antes del 2.10.
+    shadow_probe_model: str | None = None
 
     requests: list[dict[str, Any]] = field(default_factory=list)
     _tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     _invocation_items: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    _artifact_items: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     _seen: dict[str, int] = field(default_factory=dict)
     _counter: int = 0
 
@@ -92,6 +114,13 @@ class FakeBroker:
                 "execution_fingerprint": _fingerprint(model) if fingerprint is None else fingerprint,
             }
         )
+
+    @property
+    def contract_version(self) -> str:
+        """Versión que anuncia este simulado, coherente con sus interruptores."""
+        if self.supports_invocation_contract and self.supports_prompt_compression_echo:
+            return "2.10"
+        return "2.9" if self.supports_seed else "2.8"
 
     def respond(self, key: str, responder: Responder) -> None:
         self.responders[key] = responder
@@ -138,12 +167,19 @@ class FakeBroker:
             return httpx.Response(
                 200,
                 json={
-                    "contract_version": "2.9" if self.supports_seed else "2.8",
+                    "contract_version": self.contract_version,
                     "strategies": ["single"],
                     "presets": {"single": ["fast"]},
                     "exclude_from_model_learning": self.supports_learning_exclusion,
                     "invocation_telemetry": self.supports_invocation_telemetry,
                     "execution_fingerprint": self.supports_seed,
+                    # Contrato 2.10.
+                    "invocation_contract": self.supports_invocation_contract,
+                    "prompt_compression_echo": self.supports_prompt_compression_echo,
+                    "task_artifacts": self.supports_task_artifacts,
+                    "canonical_artifacts": self.supports_canonical_artifacts,
+                    "auxiliary_invocations": self.performs_auxiliary_invocations,
+                    "auxiliary_invocations_optout": self.supports_auxiliary_optout,
                 },
             )
         if request.method == "POST" and ruta == "/api/v1/tasks":
@@ -153,6 +189,11 @@ class FakeBroker:
             if not self.supports_invocation_telemetry:
                 return httpx.Response(404, json={"detail": {"code": "NOT_FOUND", "message": ruta}})
             return self._invocations(match_inv.group(1))
+        match_art = re.fullmatch(r"/api/v1/tasks/([^/]+)/artifacts", ruta)
+        if request.method == "GET" and match_art:
+            if not self.supports_task_artifacts:
+                return httpx.Response(404, json={"detail": {"code": "NOT_FOUND", "message": ruta}})
+            return self._artifacts(match_art.group(1))
         match = re.fullmatch(r"/api/v1/tasks/([^/]+)", ruta)
         if request.method == "GET" and match:
             task = self._tasks.get(match.group(1))
@@ -167,6 +208,15 @@ class FakeBroker:
         if tarea is None:
             return httpx.Response(404, json={"detail": {"code": "TASK_NOT_FOUND", "message": task_id}})
         return httpx.Response(200, json={"task_id": task_id, "items": self._invocation_items.get(task_id, [])})
+
+    def _artifacts(self, task_id: str) -> httpx.Response:
+        """`GET /api/v1/tasks/{id}/artifacts` -> {task_id, items[]} (§8.3)."""
+        tarea = self._tasks.get(task_id)
+        if tarea is None:
+            return httpx.Response(404, json={"detail": {"code": "TASK_NOT_FOUND", "message": task_id}})
+        return httpx.Response(
+            200, json={"task_id": task_id, "items": self._artifact_items.get(task_id, [])}
+        )
 
     def _model_context(self, request: httpx.Request) -> httpx.Response:
         """`/models/context` es POR MODELO y exige los tres parámetros."""
@@ -233,6 +283,19 @@ class FakeBroker:
                 },
             )
 
+        if not self.supports_auxiliary_optout and "auxiliary_invocations" in cuerpo:
+            # El contrato real valida con `extra="forbid"`: un campo que no
+            # existe hace fallar la petición entera, no se ignora.
+            return httpx.Response(
+                422,
+                json={
+                    "detail": {
+                        "code": "CONTRACT_VALIDATION_FAILED",
+                        "message": "extra fields not permitted (auxiliary_invocations)",
+                    }
+                },
+            )
+
         objetivo = cuerpo["model_requirements"]["target_model"]
         pedido = f"{objetivo['provider']}/{objetivo['deployment']}/{objetivo['model']}"
         servido = self.serve_instead.get(pedido, pedido)
@@ -295,22 +358,73 @@ class FakeBroker:
         }
         efectiva = dict(generacion)
         efectiva["seed_status"] = self.seed_status if "seed" in generacion else "not_requested"
-        self._invocation_items[task_id] = [
-            {
-                "invocation_id": f"inv_{self._counter:04d}",
-                "role": "single",
-                "model": referencia,
+        pedida = cuerpo.get("prompt_compression") or "broker_default"
+        aplicada = self.effective_compression or ("off" if pedida == "broker_default" else pedida)
+        principal: dict[str, Any] = {
+            "invocation_id": f"inv_{self._counter:04d}",
+            "role": "single",
+            "model": referencia,
+            "status": "completed",
+            "error_code": None,
+            "tokens_input": resultado["usage"]["tokens_input"],
+            "tokens_output": resultado["usage"]["tokens_output"],
+            "cost_usd": resultado["usage"]["cost_usd"],
+            "latency_ms": 42.0,
+            "generation": efectiva,
+            "execution_fingerprint": _fingerprint(modelo),
+            "excluded_from_model_learning": bool(cuerpo.get("exclude_from_model_learning")),
+        }
+        if self.supports_invocation_contract:
+            principal["contractual"] = True
+            principal["content_source"] = "content"
+        if self.supports_prompt_compression_echo:
+            principal["prompt_compression"] = {"requested": pedida, "effective": aplicada}
+        items = [principal]
+
+        # Sondeo en sombra: va DESPUÉS de la real y con otro modelo, que es lo
+        # que hacía que leer «la última invocación» midiera al aspirante.
+        exclusivo = cuerpo.get("auxiliary_invocations") is False
+        if self.shadow_probe_model and self.performs_auxiliary_invocations and not exclusivo:
+            sonda_p, sonda_d, sonda_m = self.shadow_probe_model.split("/", 2)
+            sonda: dict[str, Any] = {
+                "invocation_id": f"inv_{self._counter:04d}_shadow",
+                "role": "shadow_probe",
+                "model": {"provider": sonda_p, "deployment": sonda_d, "model": sonda_m},
                 "status": "completed",
                 "error_code": None,
-                "tokens_input": resultado["usage"]["tokens_input"],
-                "tokens_output": resultado["usage"]["tokens_output"],
-                "cost_usd": resultado["usage"]["cost_usd"],
-                "latency_ms": 42.0,
-                "generation": efectiva,
-                "execution_fingerprint": _fingerprint(modelo),
-                "excluded_from_model_learning": bool(cuerpo.get("exclude_from_model_learning")),
+                "tokens_input": 1,
+                "tokens_output": 1,
+                "cost_usd": 0.0,
+                "latency_ms": 999.0,
+                "generation": {"seed_status": "not_requested"},
+                "execution_fingerprint": _fingerprint(sonda_m),
+                "excluded_from_model_learning": True,
             }
-        ]
+            if self.supports_invocation_contract:
+                sonda["contractual"] = False
+            if self.supports_prompt_compression_echo:
+                sonda["prompt_compression"] = {"requested": pedida, "effective": aplicada}
+            items.append(sonda)
+        self._invocation_items[task_id] = items
+
+        # Artefactos (§8.3): el entregable va marcado con `final: true` y su
+        # sha256 cierra sobre los bytes exactos.
+        if self.supports_task_artifacts:
+            entregable = (resultado.get("assistant_content") or "").encode("utf-8")
+            artefacto: dict[str, Any] = {
+                "artifact_id": f"art_{self._counter:04d}",
+                "artifact_type": "single_output",
+                "filename": "respuesta.md",
+                "media_type": "text/markdown",
+                "size_bytes": len(entregable),
+                "sha256": hashlib.sha256(entregable).hexdigest(),
+                "created_at": "2026-09-05T00:00:00Z",
+                "download_url": f"/api/v1/tasks/{task_id}/artifacts/art_{self._counter:04d}",
+                "available": True,
+            }
+            if self.supports_canonical_artifacts:
+                artefacto["final"] = True
+            self._artifact_items[task_id] = [artefacto]
         self._tasks[task_id] = {
             "task_id": task_id,
             "kind": "inference",

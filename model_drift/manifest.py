@@ -121,6 +121,39 @@ class ModelUnderTest(BaseModel):
         return f"{self.provider}/{self.deployment}/{self.model}"
 
 
+class BrokerContractFlags(BaseModel):
+    """Lo que el Broker declaró poder demostrar (Client_API.md, 12).
+
+    Cada bandera se copia de `/api/v1/capabilities` tal cual, sin deducirla de
+    la versión: un operador puede tener apagado el sondeo en sombra en un
+    Broker 2.10, y la versión sola no lo diría.
+    """
+
+    #: `contract_version` que anunció el Broker. `None` = no se pudo leer.
+    version: str | None = None
+    #: 8.1: `role`/`status` enumerados y `contractual` por invocación. Sin esto,
+    #: separar el trabajo propio del Broker del que se pidió es una heurística.
+    invocation_contract: bool = False
+    #: 8.5: cada invocación declara la poda que se le aplicó de verdad.
+    prompt_compression_echo: bool = False
+    #: 8.3: el entregable viene marcado con `final: true` en /artifacts.
+    canonical_artifacts: bool = False
+    #: 8.4: si este Broker sondea otros modelos con el contenido de la tarea.
+    auxiliary_invocations: bool = True
+    #: 8.4: si acepta apagarlo con `auxiliary_invocations: false`.
+    auxiliary_invocations_optout: bool = False
+
+    @property
+    def demonstrable_execution(self) -> bool:
+        """Si esta tirada puede probar CÓMO se ejecutó, no solo qué salió.
+
+        Es el conjunto que trae el contrato 2.10: sin él una medición sigue
+        dando números, pero no puede enseñar que el prompt llegó íntegro ni que
+        la huella que atribuye al modelo es la de la llamada que respondió.
+        """
+        return self.invocation_contract and self.prompt_compression_echo
+
+
 class RunManifest(BaseModel):
     """Todo lo que hizo falta para producir una tirada, y qué se pudo verificar."""
 
@@ -149,6 +182,13 @@ class RunManifest(BaseModel):
     repetitions: int = 1
     requested_params: dict[str, Any] = Field(default_factory=dict)
     reproducibility: ReproducibilityFlags = Field(default_factory=ReproducibilityFlags)
+
+    #: Qué prometía el Broker EN MARCHA cuando se ejecutó la tirada, no lo que
+    #: dice su documentación. Se sella al arrancar, con `probe_contract`, y es
+    #: lo que permite leer una tirada vieja sabiendo qué se pudo demostrar
+    #: entonces: una misma suite contra un Broker 2.9 y contra uno 2.10 produce
+    #: evidencia distinta aunque los números salgan iguales.
+    broker_contract: BrokerContractFlags = Field(default_factory=lambda: BrokerContractFlags())
 
     #: Garantías que NO se pudieron obtener. Se escriben para que el informe
     #: las enseñe: una ausencia declarada es información, una ausencia

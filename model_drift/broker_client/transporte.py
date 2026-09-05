@@ -35,6 +35,23 @@ class TransporteBroker:
         #: Se rellenan al sondear el contrato (`probe_contract`).
         self.contract_version: str | None = None
         self.supports_invocation_telemetry = False
+        #: Contrato 2.10. `invocation_contract`: `role`/`status` enumerados y
+        #: `contractual` en cada invocación (§8.1). Sin esto, separar el trabajo
+        #: propio del Broker del que se pidió es una heurística sobre el rol.
+        self.supports_invocation_contract = False
+        #: `prompt_compression_echo`: cada invocación declara la poda que se le
+        #: aplicó de verdad (§8.5).
+        self.supports_prompt_compression_echo = False
+        #: `task_artifacts` y `canonical_artifacts`: listar los ficheros que
+        #: produce una tarea, y saber cuál de ellos es el entregable (§8.3).
+        self.supports_task_artifacts = False
+        self.supports_canonical_artifacts = False
+        #: `auxiliary_invocations`: si este Broker sondea otros modelos con el
+        #: contenido de la tarea bajo su mismo `task_id` (§8.4). Ausente en 2.9,
+        #: donde sí lo hacía: por eso el default optimista es `True`.
+        self.performs_auxiliary_invocations = True
+        #: `auxiliary_invocations_optout`: si acepta apagarlas en la petición.
+        self.supports_auxiliary_optout = False
 
     # ---------------------------------------------------------------- infra
 

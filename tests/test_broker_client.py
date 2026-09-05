@@ -159,17 +159,42 @@ def test_la_sonda_de_contrato_averigua_lo_que_admite_el_broker() -> None:
     """
     moderno = _broker()
     with moderno.client() as cliente:
-        assert cliente.probe_contract() == {"seed": True, "learning_exclusion": True}
+        assert cliente.probe_contract() == {
+            "seed": True,
+            "learning_exclusion": True,
+            "invocation_contract": True,
+            "prompt_compression_echo": True,
+            "canonical_artifacts": True,
+            "auxiliary_optout": True,
+        }
         assert cliente.missing_guarantees == []
+        assert cliente.contract_version == "2.10"
 
     antiguo = _broker()
     antiguo.supports_seed = False
     antiguo.supports_learning_exclusion = False
+    antiguo.supports_invocation_contract = False
+    antiguo.supports_prompt_compression_echo = False
+    antiguo.supports_canonical_artifacts = False
+    antiguo.supports_auxiliary_optout = False
     with antiguo.client() as cliente:
         contrato = cliente.probe_contract()
-        assert contrato == {"seed": False, "learning_exclusion": False}
+        assert contrato == {
+            "seed": False,
+            "learning_exclusion": False,
+            "invocation_contract": False,
+            "prompt_compression_echo": False,
+            "canonical_artifacts": False,
+            "auxiliary_optout": False,
+        }
         assert any("NO es reproducible" in aviso for aviso in cliente.missing_guarantees)
         assert any("altera las estadísticas" in aviso for aviso in cliente.missing_guarantees)
+        # Contrato 2.10: lo que un Broker viejo no puede demostrar se declara,
+        # en vez de darlo por bueno.
+        assert any("no declara `contractual`" in aviso for aviso in cliente.missing_guarantees)
+        assert any("prompt_compression.effective" in aviso for aviso in cliente.missing_guarantees)
+        assert any("no acepta apagarlas" in aviso for aviso in cliente.missing_guarantees)
+        assert any("no marca `final: true`" in aviso for aviso in cliente.missing_guarantees)
 
 
 # --------------------------------------------------------------------------
@@ -257,7 +282,14 @@ def test_la_sonda_degrada_si_el_broker_no_publica_capacidades() -> None:
     http = httpx.Client(transport=httpx.MockTransport(sin_capabilities), base_url="http://broker.test")
     with BrokerClient(BrokerConfig(base_url="http://broker.test", poll_interval_seconds=0.0), client=http) as c:
         contrato = c.probe_contract()
-        assert set(contrato) == {"seed", "learning_exclusion"}
+        assert set(contrato) == {
+            "seed",
+            "learning_exclusion",
+            "invocation_contract",
+            "prompt_compression_echo",
+            "canonical_artifacts",
+            "auxiliary_optout",
+        }
         assert any("no se pudieron leer las capacidades" in aviso for aviso in c.missing_guarantees)
 
 
@@ -320,3 +352,151 @@ def test_las_entradas_de_catalogo_ilegibles_se_cuentan_no_se_tragan() -> None:
         entradas = c.catalog()
         assert [item.model for item in entradas] == ["bueno"]
         assert any("no encajan en el contrato conocido" in aviso for aviso in c.missing_guarantees)
+
+
+# --------------------------------------------------------------------------
+# Contrato 2.10: ejecución demostrable (Client_API.md, 8.1/8.3/8.4/8.5)
+# --------------------------------------------------------------------------
+
+
+def test_el_sondeo_en_sombra_no_se_lee_como_la_respuesta() -> None:
+    """El caso que motivó `contractual` (§8.1).
+
+    El Broker mide su catálogo invocando a un aspirante con el mismo prompt
+    bajo el mismo `task_id`, y esa llamada llega DESPUÉS de la real. Leer «la
+    última invocación» le atribuía al modelo medido la huella, la latencia y
+    los parámetros de otro. Con el 2.10 hay un booleano que lo separa.
+    """
+    broker = _broker()
+    broker.shadow_probe_model = "ollama/local/aspirante:1b"
+    # Sin opt-out el Broker sondea igual: es su trabajo, no un fallo.
+    broker.supports_auxiliary_optout = False
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.ok
+    # La huella y la latencia son las de la invocación contractual...
+    assert resultado.fingerprint.get("model") == VIEJO.model
+    assert resultado.latency_ms == 42.0
+    # ...y el sondeo queda contado y declarado, no escondido.
+    assert resultado.auxiliary_invocations == 1
+    assert resultado.auxiliary_roles == ["shadow_probe"]
+    assert any("exclusividad de contenido" in aviso for aviso in cliente.missing_guarantees)
+
+
+def test_sin_el_booleano_se_cae_al_nombre_del_rol() -> None:
+    """Contra un Broker 2.9 no hay más remedio, y por eso el 2.10 importa."""
+    broker = _broker()
+    broker.shadow_probe_model = "ollama/local/aspirante:1b"
+    broker.supports_invocation_contract = False
+    broker.supports_auxiliary_optout = False
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.fingerprint.get("model") == VIEJO.model
+    assert resultado.auxiliary_invocations == 1
+
+
+def test_se_pide_exclusividad_de_contenido_cuando_el_broker_la_ofrece() -> None:
+    """`auxiliary_invocations: false` (§8.4): solo el modelo medido lo ve."""
+    broker = _broker()
+    broker.shadow_probe_model = "ollama/local/aspirante:1b"
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert broker.requests[0]["auxiliary_invocations"] is False
+    assert resultado.auxiliary_invocations == 0
+
+
+def test_un_broker_sin_optout_no_recibe_el_campo() -> None:
+    """El contrato valida con `extra="forbid"`: enviarlo a ciegas es un 422."""
+    broker = _broker()
+    broker.supports_auxiliary_optout = False
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.ok
+    assert "auxiliary_invocations" not in broker.requests[0]
+
+
+def test_se_pide_el_prompt_sin_podar_y_se_comprueba_el_eco() -> None:
+    """§8.5: pedir `off` deja de ser una petición sin acuse de recibo."""
+    from model_drift.broker_contracts import PromptCompression
+
+    broker = _broker()
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert broker.requests[0]["prompt_compression"] == "off"
+    assert resultado.prompt_compression_effective is PromptCompression.off
+    assert cliente.missing_guarantees == []
+
+
+def test_una_poda_efectiva_distinta_de_la_pedida_se_declara() -> None:
+    """Se pidió `off` y el Broker comprimió igual: eso es lo que destapa el eco."""
+    from model_drift.broker_contracts import PromptCompression
+
+    broker = _broker()
+    broker.effective_compression = "medium"
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.prompt_compression_effective is PromptCompression.medium
+    assert any("prompt sin podar en" in aviso for aviso in cliente.missing_guarantees)
+
+
+def test_sin_eco_no_se_afirma_que_no_hubo_poda() -> None:
+    """«No consta» y «se cumplió» no son lo mismo."""
+    broker = _broker()
+    broker.supports_prompt_compression_echo = False
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.prompt_compression_effective is None
+    assert any("no declara `prompt_compression.effective`" in aviso for aviso in cliente.missing_guarantees)
+
+
+def test_el_entregable_se_cierra_por_el_artefacto_final() -> None:
+    """§8.3: `final: true` marca el entregable y su sha256 cierra sobre los bytes."""
+    import hashlib
+
+    broker = _broker()
+    broker.respond_fixed(VIEJO.key, "la respuesta")
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.deliverable_sha256 == hashlib.sha256("la respuesta".encode("utf-8")).hexdigest()
+
+
+def test_sin_artefactos_canonicos_no_se_inventa_una_huella_del_entregable() -> None:
+    broker = _broker()
+    broker.supports_canonical_artifacts = False
+    with broker.client() as cliente:
+        cliente.probe_contract()
+        resultado = cliente.invoke(prompt="hola", target=VIEJO)
+
+    assert resultado.deliverable_sha256 is None
+
+
+def test_un_rol_desconocido_no_es_un_error() -> None:
+    """`unknown` es «no lo reconozco», no un fallo (§8.1)."""
+    from model_drift.broker_contracts import (
+        InvocationRole,
+        InvocationStatus,
+        InvocationTelemetry,
+    )
+
+    item = InvocationTelemetry.model_validate(
+        {"role": "rol_del_futuro", "status": "estado_del_futuro", "contractual": True}
+    )
+    assert item.role_enum is InvocationRole.unknown
+    assert item.status_enum is InvocationStatus.unknown
+    assert item.is_contractual is True

@@ -18,7 +18,9 @@ from model_drift.broker_contracts import (
     InferenceKind,
     InvocationTelemetry,
     ModelReference,
+    PromptCompression,
     SeedStatus,
+    TaskArtifact,
     TaskState,
 )
 
@@ -81,6 +83,18 @@ class InvocacionMixin(HuellaMixin):
             cuerpo["execution"]["timeout_seconds"] = timeout_seconds
         if self.config.supports_learning_exclusion:
             cuerpo["exclude_from_model_learning"] = True
+        if self.config.supports_prompt_compression:
+            # Una medición sobre un prompt podado no compara lo que dice
+            # comparar: el modelo no vio el caso, vio un resumen del caso. Desde
+            # el contrato 2.10 esto además tiene acuse de recibo (§8.5), que es
+            # lo que se comprueba en `_verificar_compresion`.
+            cuerpo["prompt_compression"] = PromptCompression.off.value
+        if self.config.request_exclusive_content and self.supports_auxiliary_optout:
+            # Contrato 2.10, §8.4. La garantía implícita (`target_model` +
+            # `fallback_allowed: false`) ya cubre esta tarea, pero solo contra
+            # un Broker 2.10 y sin dejar rastro de que se pidió. Declararlo lo
+            # convierte en algo que se puede leer en el cuerpo de la petición.
+            cuerpo["auxiliary_invocations"] = False
         return cuerpo
 
     def _submit(self, cuerpo: dict[str, Any]) -> str:
@@ -96,6 +110,27 @@ class InvocacionMixin(HuellaMixin):
                 )
                 cuerpo["generation"].pop("seed", None)
                 cuerpo["generation"].pop("top_p", None)
+                respuesta = self._request("POST", "/api/v1/tasks", json=cuerpo)
+            elif error.status_code == 422 and "auxiliary_invocations" in str(error):
+                # El Broker anuncia el opt-out y lo rechaza: contradicción suya,
+                # pero la tirada no se cae por eso. Se quita y se declara.
+                self.supports_auxiliary_optout = False
+                self._declare_missing(
+                    "exclusividad de contenido: el Broker rechazó auxiliary_invocations "
+                    "(contrato 2.10, §8.4) pese a anunciar el opt-out. El prompt puede "
+                    "verlo un modelo distinto del medido, bajo el mismo task_id."
+                )
+                cuerpo.pop("auxiliary_invocations", None)
+                respuesta = self._request("POST", "/api/v1/tasks", json=cuerpo)
+            elif error.status_code == 422 and self.config.supports_prompt_compression and (
+                "prompt_compression" in str(error)
+            ):
+                self.config.supports_prompt_compression = False
+                self._declare_missing(
+                    "prompt sin podar: el Broker no admite prompt_compression en la petición. "
+                    "El prompt puede llegar al modelo podado y la comparación no es limpia."
+                )
+                cuerpo.pop("prompt_compression", None)
                 respuesta = self._request("POST", "/api/v1/tasks", json=cuerpo)
             elif error.status_code == 422 and self.config.supports_learning_exclusion:
                 self.config.supports_learning_exclusion = False
@@ -138,6 +173,84 @@ class InvocacionMixin(HuellaMixin):
                 except Exception:
                     continue
         return telemetria
+
+    def artifacts(self, task_id: str) -> list[TaskArtifact]:
+        """Ficheros que produjo la tarea (contrato 2.10, §8.3).
+
+        Es la vía **canónica** para recoger el entregable: viene tipado y con su
+        `sha256`. `result.assistant_content` sigue siendo la comodidad para
+        enseñar la respuesta, pero `result` no tiene esquema en el OpenAPI, así
+        que una medición que tiene que rendir cuentas después no puede cerrarse
+        solo sobre él.
+        """
+        if not self.supports_task_artifacts:
+            return []
+        try:
+            payload = self._request("GET", f"/api/v1/tasks/{task_id}/artifacts").json()
+        except BrokerError:
+            self._declare_missing(
+                "entregable con contrato: el Broker no expone "
+                "/api/v1/tasks/{id}/artifacts (contrato 2.10, §8.3)."
+            )
+            return []
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            return []
+        artefactos: list[TaskArtifact] = []
+        for item in items:
+            if isinstance(item, dict):
+                try:
+                    artefactos.append(TaskArtifact.model_validate(item))
+                except Exception:
+                    continue
+        return artefactos
+
+    def _sha256_entregable(self, task_id: str) -> str | None:
+        """`sha256` del artefacto marcado `final: true` (§8.3).
+
+        Se filtra por el booleano y no por `artifact_type`: la lista de tipos
+        crece con cada estrategia nueva y cerrar con «el primero de la lista»
+        cerraría con el PNG que acompaña, no con la respuesta.
+        """
+        if not (self.supports_task_artifacts and self.supports_canonical_artifacts):
+            return None
+        for artefacto in self.artifacts(task_id):
+            if artefacto.final and artefacto.sha256:
+                return artefacto.sha256
+        return None
+
+    def _verificar_compresion(
+        self,
+        contractuales: list[InvocationTelemetry],
+        target: ModelReference,
+    ) -> PromptCompression | None:
+        """Comprueba que el prompt llegó al modelo sin podar (§8.5).
+
+        La aserción es sobre las invocaciones **contractuales**: el Broker fuerza
+        `off` en las que procesan contenido generado, así que mezclarlas
+        confundiría una política con un automatismo. Sin
+        `prompt_compression_echo` no hay acuse de recibo y se devuelve `None`:
+        no consta, que no es lo mismo que se cumplió.
+        """
+        if not self.supports_prompt_compression_echo:
+            return None
+        efectivas = [
+            item.compression_effective
+            for item in contractuales
+            # `null` en llamadas que no envían prompt de usuario: nada que podar.
+            if item.compression_effective is not None
+        ]
+        if not efectivas:
+            return None
+        podadas = [valor for valor in efectivas if valor is not PromptCompression.off]
+        if podadas:
+            self._declare_missing(
+                f"prompt sin podar en {target.key}: se pidió prompt_compression=off y el "
+                f"Broker aplicó {', '.join(sorted({item.value for item in podadas}))} "
+                "(§8.5). El modelo no vio el caso íntegro."
+            )
+            return podadas[0]
+        return PromptCompression.off
 
     def _poll(self, task_id: str) -> TaskState:
         limite = time.monotonic() + self.config.max_wait_seconds
@@ -221,7 +334,25 @@ class InvocacionMixin(HuellaMixin):
         # servir y qué pasó con la semilla. Sustituye a lo que se pidió, que es
         # lo único que se sabía antes de 2.9.
         telemetria = self.invocations(estado.task_id) if self.supports_invocation_telemetry else []
-        principal = telemetria[-1] if telemetria else None
+        contractuales = [item for item in telemetria if item.is_contractual]
+        auxiliares = [item for item in telemetria if not item.is_contractual]
+        resultado.auxiliary_invocations = len(auxiliares)
+        resultado.auxiliary_roles = sorted({item.role for item in auxiliares})
+        if auxiliares:
+            # No es un fallo: el Broker mide su catálogo y lo declara. Pero un
+            # contenido que se quería exclusivo lo ha visto otro modelo, y eso
+            # tiene que constar en el manifiesto de la tirada.
+            self._declare_missing(
+                f"exclusividad de contenido en {target.key}: el Broker lanzó "
+                f"{len(auxiliares)} invocación(es) no contractual(es) "
+                f"({', '.join(resultado.auxiliary_roles)}) bajo el mismo task_id (§8.4)."
+            )
+
+        # La ÚLTIMA contractual, no la última a secas: bajo un mismo `task_id`
+        # conviven las llamadas que ejecutan la tarea y las que el Broker lanza
+        # por su cuenta (§8.1). Leer un `shadow_probe` como si fuera la
+        # respuesta atribuye a este modelo la huella y los parámetros de otro.
+        principal = contractuales[-1] if contractuales else None
         if principal is not None:
             resultado.seed_status = principal.seed_status
             if principal.generation:
@@ -229,13 +360,24 @@ class InvocacionMixin(HuellaMixin):
             if principal.latency_ms is not None:
                 resultado.latency_ms = principal.latency_ms
             resultado.fingerprint = _huella_publicada(principal.execution_fingerprint)
+            resultado.content_source = principal.content_source
             if principal.seed_status is SeedStatus.unsupported:
                 self._declare_missing(
                     f"determinismo en {target.key}: el endpoint no admite semilla "
                     "(seed_status=unsupported), así que pedirla no cambió nada."
                 )
+            if principal.content_source == "reasoning_content":
+                # La respuesta es válida, pero el modelo no la entrega donde
+                # debe. Al comparar modelos eso no es un detalle de formato.
+                self._declare_missing(
+                    f"entrega limpia en {target.key}: el modelo dejó `content` vacío y el "
+                    "Broker rescató su razonamiento (content_source=reasoning_content, §8.1)."
+                )
         if not resultado.fingerprint.components:
             resultado.fingerprint = self.fingerprint_for(target, resultado)
+
+        resultado.prompt_compression_effective = self._verificar_compresion(contractuales, target)
+        resultado.deliverable_sha256 = self._sha256_entregable(estado.task_id)
 
         # Fijación dura: si sirvió otro modelo, la invocación no vale para
         # comparar aunque haya devuelto un texto perfecto.

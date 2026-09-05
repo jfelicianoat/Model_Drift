@@ -15,7 +15,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS invocation (
     fallback_used  INTEGER NOT NULL DEFAULT 0,
     fingerprint_json TEXT,
     applied_params_json TEXT,
+    -- Evidencia del contrato 2.10 del Broker (Client_API.md, 8.1/8.3/8.4/8.5).
+    -- Se guarda por invocación porque es por invocación como se demuestra: una
+    -- tirada que no puede enseñar esto no puede sostener lo que afirma.
+    prompt_compression TEXT,  -- 8.5: la poda que se aplicó DE VERDAD
+    content_source TEXT,      -- 8.1: de qué campo salió el texto
+    deliverable_sha256 TEXT,  -- 8.3: sha256 del artefacto `final: true`
+    auxiliary_invocations INTEGER NOT NULL DEFAULT 0,  -- 8.4: quién más lo vio
+    auxiliary_roles_json TEXT,
     error_code     TEXT,
     error_message  TEXT,
     created_at     TEXT NOT NULL
@@ -149,12 +157,33 @@ class Database:
         self.connection.execute("PRAGMA journal_mode = WAL")
         self._migrate()
 
+    #: Columnas añadidas después de la versión 1 del esquema. `CREATE TABLE IF
+    #: NOT EXISTS` no toca una tabla que ya existe, así que una base creada
+    #: antes se quedaría sin ellas y las tiradas viejas seguirían abriéndose
+    #: pero fallarían al insertar. Se añaden aquí, que es aditivo y sin pérdida.
+    _COLUMNAS_NUEVAS: tuple[tuple[str, str, str], ...] = (
+        ("invocation", "prompt_compression", "TEXT"),
+        ("invocation", "content_source", "TEXT"),
+        ("invocation", "deliverable_sha256", "TEXT"),
+        ("invocation", "auxiliary_invocations", "INTEGER NOT NULL DEFAULT 0"),
+        ("invocation", "auxiliary_roles_json", "TEXT"),
+    )
+
     def _migrate(self) -> None:
         with self.connection:
             self.connection.executescript(SCHEMA)
+            for tabla, columna, tipo in self._COLUMNAS_NUEVAS:
+                existentes = {
+                    fila["name"]
+                    for fila in self.connection.execute(f"PRAGMA table_info({tabla})").fetchall()
+                }
+                if columna not in existentes:
+                    self.connection.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
             fila = self.connection.execute("SELECT version FROM schema_version").fetchone()
             if fila is None:
                 self.connection.execute("INSERT INTO schema_version(version) VALUES (?)", (SCHEMA_VERSION,))
+            elif fila["version"] != SCHEMA_VERSION:
+                self.connection.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
     def close(self) -> None:
         self.connection.close()

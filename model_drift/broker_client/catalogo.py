@@ -46,6 +46,10 @@ class CatalogoMixin(TransporteBroker):
             return {
                 "seed": self.config.supports_seed,
                 "learning_exclusion": self.config.supports_learning_exclusion,
+                "invocation_contract": self.supports_invocation_contract,
+                "prompt_compression_echo": self.supports_prompt_compression_echo,
+                "canonical_artifacts": self.supports_canonical_artifacts,
+                "auxiliary_optout": self.supports_auxiliary_optout,
             }
 
         self.contract_version = str(capacidades.get("contract_version") or "") or None
@@ -56,6 +60,49 @@ class CatalogoMixin(TransporteBroker):
         )
         self.config.supports_learning_exclusion = bool(capacidades.get("exclude_from_model_learning"))
         self.supports_invocation_telemetry = bool(capacidades.get("invocation_telemetry"))
+
+        # --- Contrato 2.10 --------------------------------------------------
+        # Todo aditivo: contra un Broker 2.9 estas banderas se quedan en falso y
+        # la medición sigue funcionando, pero declarando qué no pudo demostrar.
+        self.supports_invocation_contract = bool(capacidades.get("invocation_contract"))
+        self.supports_prompt_compression_echo = bool(capacidades.get("prompt_compression_echo"))
+        self.supports_task_artifacts = bool(capacidades.get("task_artifacts"))
+        self.supports_canonical_artifacts = bool(capacidades.get("canonical_artifacts"))
+        auxiliares = capacidades.get("auxiliary_invocations")
+        # Ausente = Broker anterior al 2.10, que las hacía sin anunciarlas.
+        self.performs_auxiliary_invocations = True if auxiliares is None else bool(auxiliares)
+        self.supports_auxiliary_optout = bool(capacidades.get("auxiliary_invocations_optout"))
+        self.config.supports_prompt_compression = (
+            self.config.supports_prompt_compression and self._acepta_compresion(capacidades)
+        )
+
+        if not self.supports_invocation_contract:
+            self._declare_missing(
+                "separación del trabajo auxiliar: el Broker no declara `contractual` por "
+                "invocación (contrato 2.10, §8.1). Las llamadas que el Broker hace por su "
+                "cuenta bajo el mismo task_id solo se pueden distinguir por el nombre del rol."
+            )
+        if not self.supports_prompt_compression_echo:
+            self._declare_missing(
+                "prompt sin podar: el Broker no declara `prompt_compression.effective` "
+                "(contrato 2.10, §8.5). Pedir `off` no tiene acuse de recibo, así que no se "
+                "puede demostrar que el modelo vio el prompt íntegro."
+            )
+        if self.performs_auxiliary_invocations and not self.supports_auxiliary_optout:
+            # No es una garantía perdida de la medición —el sondeo en sombra no
+            # se factura ni altera el resultado— pero sí de confidencialidad: el
+            # contenido lo ve un modelo que nadie eligió.
+            self._declare_missing(
+                "exclusividad de contenido: el Broker hace invocaciones auxiliares y no "
+                "acepta apagarlas (contrato 2.10, §8.4). El prompt puede verlo un modelo "
+                "distinto del medido, bajo el mismo task_id."
+            )
+        if not self.supports_canonical_artifacts:
+            self._declare_missing(
+                "entregable con contrato: el Broker no marca `final: true` en /artifacts "
+                "(contrato 2.10, §8.3). La salida se lee de `result`, que no tiene esquema."
+            )
+
         if not self.config.supports_seed:
             self._declare_missing(
                 "control de determinismo: el Broker no admite generation.seed "
@@ -69,7 +116,24 @@ class CatalogoMixin(TransporteBroker):
         return {
             "seed": self.config.supports_seed,
             "learning_exclusion": self.config.supports_learning_exclusion,
+            "invocation_contract": self.supports_invocation_contract,
+            "prompt_compression_echo": self.supports_prompt_compression_echo,
+            "canonical_artifacts": self.supports_canonical_artifacts,
+            "auxiliary_optout": self.supports_auxiliary_optout,
         }
+
+    @staticmethod
+    def _acepta_compresion(capacidades: dict[str, Any]) -> bool:
+        """Si tiene sentido pedir `prompt_compression` en la petición.
+
+        `prompt_compression` es campo de primer nivel desde antes del 2.10 y no
+        tiene bandera propia en `/capabilities`; lo que el 2.10 añade es el eco
+        que permite comprobarlo. Se envía siempre que el Broker declare una
+        versión de contrato conocida, y el 422 sigue siendo la red de seguridad
+        para uno más antiguo.
+        """
+        version = str(capacidades.get("contract_version") or "")
+        return bool(version)
 
     def catalog(self, *, refresh: bool = False) -> list[ModelCatalogEntry]:
         """Catálogo de modelos: una sola petición a `/models/availability`.

@@ -37,6 +37,18 @@ def _invocation_row(
         "fallback_used": outcome.fallback_used,
         "fingerprint_json": outcome.fingerprint.model_dump(mode="json"),
         "applied_params_json": outcome.applied_params,
+        # Evidencia del contrato 2.10 (Client_API.md, 8.1/8.3/8.4/8.5). `None`
+        # contra un Broker que no la publica: «no consta» es un dato, y es
+        # distinto de «se cumplió».
+        "prompt_compression": (
+            outcome.prompt_compression_effective.value
+            if outcome.prompt_compression_effective is not None
+            else None
+        ),
+        "content_source": outcome.content_source,
+        "deliverable_sha256": outcome.deliverable_sha256,
+        "auxiliary_invocations": outcome.auxiliary_invocations,
+        "auxiliary_roles_json": outcome.auxiliary_roles,
         "error_code": outcome.error_code,
         "error_message": outcome.error_message,
         "created_at": datetime.now(UTC).isoformat(),

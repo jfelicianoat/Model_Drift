@@ -28,7 +28,7 @@ from model_drift.domain import (
     METRIC_TOKENS,
     CaseOutcome,
 )
-from model_drift.manifest import RunManifest
+from model_drift.manifest import BrokerContractFlags, RunManifest
 from model_drift.oracles import aggregate_pass, evaluate_assertions, normalize_text
 from model_drift.runner.filas import _case_row, _invocation_row
 from model_drift.runner.manifiesto import ManifiestoMixin
@@ -89,6 +89,7 @@ class Runner(ManifiestoMixin):
         # la verdad en vez de corregirse al final con el primer 422.
         self.client.probe_contract()
         manifiesto = self._build_manifest(run_id, models)
+        self._sellar_contrato_broker(manifiesto)
         salida = RunOutput(run_id=run_id, manifest=manifiesto)
         acumulado = _Acumulado()
         group = f"model-drift-{run_id}"
@@ -324,6 +325,24 @@ class Runner(ManifiestoMixin):
             )
             resultados.outcomes[(case.id, metrica)] = outcome
             acumulado.filas_caso.append(_case_row(run_id, outcome))
+
+    def _sellar_contrato_broker(self, manifiesto: RunManifest) -> None:
+        """Copia al manifiesto lo que promete el Broker EN MARCHA.
+
+        Se sella al arrancar, no al terminar: una tirada leída dentro de seis
+        meses tiene que poder decir qué se pudo demostrar entonces. El mismo
+        número contra un Broker 2.9 y contra uno 2.10 no vale lo mismo, porque
+        solo en el segundo se sabe que la huella era la de la llamada que
+        respondió y que el prompt llegó sin podar.
+        """
+        manifiesto.broker_contract = BrokerContractFlags(
+            version=self.client.contract_version,
+            invocation_contract=self.client.supports_invocation_contract,
+            prompt_compression_echo=self.client.supports_prompt_compression_echo,
+            canonical_artifacts=self.client.supports_canonical_artifacts,
+            auxiliary_invocations=self.client.performs_auxiliary_invocations,
+            auxiliary_invocations_optout=self.client.supports_auxiliary_optout,
+        )
 
     # ------------------------------------------------------------ cierre
 
