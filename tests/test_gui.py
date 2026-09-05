@@ -10,7 +10,10 @@ de Linux sin X). En Windows, que es donde se usa, corren siempre.
 """
 from __future__ import annotations
 
+import os
 import queue
+import subprocess
+import sys
 import tkinter as tk
 from pathlib import Path
 
@@ -350,7 +353,56 @@ def test_la_tirada_completa_desde_la_ventana(ventana, dialogos) -> None:  # type
 # --------------------------------------------------------------------------
 
 
-def test_main_crea_una_sola_raiz_y_la_esconde(entorno, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def _cobertura_activa() -> bool:
+    """Si esta bateria se esta ejecutando bajo `coverage`."""
+    try:
+        import coverage
+    except ImportError:  # pragma: no cover - sin cobertura instalada
+        return False
+    return coverage.Coverage.current() is not None
+
+
+def arrancar_main(tmp_path: Path, guion: str) -> subprocess.CompletedProcess[str]:
+    """Ejecuta `main()` en un proceso nuevo, con un solo intérprete de Tcl.
+
+    Estas dos pruebas vivían en el proceso de pytest y fallaban una de cada dos
+    veces con «couldn't read file init.tcl». El motivo no era `main()`: era que
+    ya había una raíz de sesión viva y `main()` crea la suya, así que el proceso
+    acababa con dos intérpretes de Tcl. Tcl no lo lleva bien, y ese escenario no
+    existe en producción: `arrancar_model_drift.bat` lanza un proceso limpio con
+    exactamente una raíz.
+
+    Probarlo en un subproceso quita el falso rojo **y** es más fiel a lo que se
+    ejecuta de verdad. Lo que se afirma sigue siendo lo mismo.
+    """
+    fichero = tmp_path / "arranque.py"
+    fichero.write_text(guion, encoding="utf-8")
+    entorno = os.environ.copy()
+    # El hijo arranca desde `tmp_path`, asi que no hereda la raiz del proyecto en
+    # `sys.path` como si hace pytest. Sin esto la prueba solo pasa cuando
+    # `model_drift` esta instalado en el interprete, y falla con un
+    # `ModuleNotFoundError` que no dice nada del codigo que se esta probando.
+    raiz = str(Path(__file__).resolve().parents[1])
+    anterior = entorno.get("PYTHONPATH")
+    entorno["PYTHONPATH"] = raiz if not anterior else raiz + os.pathsep + anterior
+    # Si la bateria corre con cobertura, el hijo tambien se mide: `coverage`
+    # arranca solo cuando ve esta variable, y sin ella `main()` figuraria como
+    # no cubierto por el simple hecho de ejecutarse en otro proceso.
+    if _cobertura_activa():
+        entorno["COVERAGE_PROCESS_START"] = str(
+            Path(__file__).resolve().parents[1] / "pyproject.toml"
+        )
+    return subprocess.run(
+        [sys.executable, str(fichero), str(tmp_path)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env=entorno,
+    )
+
+
+def test_main_crea_una_sola_raiz_y_la_esconde(entorno, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """El camino que recorre `arrancar_model_drift.bat`.
 
     Se prueba porque ya falló dos veces: primero abriendo una segunda ventana
@@ -358,36 +410,66 @@ def test_main_crea_una_sola_raiz_y_la_esconde(entorno, monkeypatch) -> None:  # 
     después con un NameError que ni ruff ni mypy vieron, porque nada ejecutaba
     esta función.
     """
-    from model_drift import gui
+    resultado = arrancar_main(
+        tmp_path,
+        """
+import sys
+import tkinter as tk
 
-    config, _, _ = entorno
-    creadas: list[tk.Misc] = []
+from model_drift import gui
+from model_drift.config import AppConfig
 
-    class VentanaFalsa(tk.Toplevel):
-        def __init__(self, configuracion, master=None):  # type: ignore[no-untyped-def]
-            super().__init__(master)
-            creadas.append(self)
-            # Cerrarse enseguida para que `wait_window` devuelva el control.
-            self.after(50, self.destroy)
-
-    monkeypatch.setattr(gui, "ModelDriftGUI", VentanaFalsa)
-    assert gui.main(config) == 0
-    assert len(creadas) == 1, "main() debe crear exactamente una ventana"
+raiz = sys.argv[1]
+creadas = []
 
 
-def test_main_avisa_por_ventana_si_no_puede_arrancar(entorno, monkeypatch, dialogos) -> None:  # type: ignore[no-untyped-def]
+class VentanaFalsa(tk.Toplevel):
+    def __init__(self, configuracion, master=None):
+        super().__init__(master)
+        creadas.append(self)
+        # Cerrarse enseguida para que `wait_window` devuelva el control.
+        self.after(50, self.destroy)
+
+
+gui.ModelDriftGUI = VentanaFalsa
+codigo = gui.main(AppConfig(database=raiz + "/md.sqlite", reports_dir=raiz, suites_dir=raiz))
+# Las raíces que quedan vivas: `main()` tiene que haber destruido la suya.
+raices = 1 if tk._default_root is not None else 0
+print("RESULTADO", codigo, len(creadas), raices)
+""",
+    )
+
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+    assert "RESULTADO 0 1 0" in resultado.stdout, resultado.stdout + resultado.stderr
+
+
+def test_main_avisa_por_ventana_si_no_puede_arrancar(entorno, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """Sin consola, un traceback perdido es un fallo mudo: hay que enseñarlo."""
-    from model_drift import gui
+    resultado = arrancar_main(
+        tmp_path,
+        """
+import sys
 
-    config, _, _ = entorno
+from model_drift import gui
+from model_drift.config import AppConfig
 
-    def explota(configuracion, master=None):  # type: ignore[no-untyped-def]
-        raise RuntimeError("la base de datos está corrupta")
+raiz = sys.argv[1]
+avisos = []
+gui.messagebox.showerror = lambda titulo, texto: avisos.append(texto)
 
-    monkeypatch.setattr(gui, "ModelDriftGUI", explota)
-    assert gui.main(config) == 1
-    assert dialogos["error"], "un fallo de arranque tiene que salir por pantalla"
-    assert "corrupta" in dialogos["error"][0]
+
+def explota(configuracion, master=None):
+    raise RuntimeError("la base de datos esta corrupta")
+
+
+gui.ModelDriftGUI = explota
+codigo = gui.main(AppConfig(database=raiz + "/md.sqlite", reports_dir=raiz, suites_dir=raiz))
+print("RESULTADO", codigo, len(avisos), "corrupta" in (avisos[0] if avisos else ""))
+""",
+    )
+
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+    assert "RESULTADO 1 1 True" in resultado.stdout, resultado.stdout + resultado.stderr
 
 
 # --------------------------------------------------------------------------

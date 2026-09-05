@@ -35,6 +35,10 @@ pythonpath = ["."]
 
 [tool.coverage.run]
 source = ["model_drift"]
+# Las pruebas de `main()` lanzan un proceso nuevo a proposito (una sola raiz
+# de Tcl por proceso, como en produccion). Sin medir los subprocesos, `main()`
+# apareceria sin cubrir solo por ejecutarse fuera de pytest.
+parallel = true
 
 [tool.coverage.report]
 show_missing = true
