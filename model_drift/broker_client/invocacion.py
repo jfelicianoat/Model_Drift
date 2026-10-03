@@ -40,6 +40,7 @@ class InvocacionMixin(HuellaMixin):
         inference_kind: InferenceKind,
         json_schema: dict[str, Any] | None,
         timeout_seconds: int | None,
+        cloud_allowed: bool | None = None,
     ) -> dict[str, Any]:
         generation: dict[str, Any] = {}
         if params.get("temperature") is not None:
@@ -77,6 +78,8 @@ class InvocacionMixin(HuellaMixin):
             # contrato), así que el rol se antepone al propio prompt para que
             # llegue al modelo sin que el Broker lo reescriba.
             cuerpo["content"]["prompt"] = f"{system}\n\n{prompt}"
+        if cloud_allowed is not None:
+            cuerpo["model_requirements"]["cloud_allowed"] = cloud_allowed
         if json_schema is not None:
             cuerpo["output"] = {"format": "json", "json_schema": json_schema}
         if timeout_seconds is not None:
@@ -277,6 +280,7 @@ class InvocacionMixin(HuellaMixin):
         inference_kind: InferenceKind = InferenceKind.chat,
         json_schema: dict[str, Any] | None = None,
         timeout_seconds: int | None = None,
+        cloud_allowed: bool | None = None,
     ) -> InvocationOutcome:
         """Ejecuta una invocación y devuelve salida cruda más telemetría."""
         params = params or {}
@@ -290,6 +294,7 @@ class InvocacionMixin(HuellaMixin):
             inference_kind=inference_kind,
             json_schema=json_schema,
             timeout_seconds=timeout_seconds,
+            cloud_allowed=cloud_allowed,
         )
         arranque = time.monotonic()
         try:

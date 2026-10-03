@@ -27,3 +27,19 @@ allow_code_execution: false
 # adaptativo, así que esto no hace falta. Solo se pone a true para lanzar
 # contra un Broker antiguo aceptando que la tirada altere sus estadísticas.
 accept_learning_contamination: false
+
+# Juicios semánticos del Broker 2.11. Activar primero en sombra para calibrar.
+system1:
+  enabled: false
+  shadow_mode: true
+  use_case: model_drift_semantic
+  timeout_seconds: 75.0
+  cloud_allowed: false
+  regression_threshold: 0.80
+  high_priority_threshold: 0.95
+  equivalence_threshold: 0.99
+  allow_equivalence_skip: false
+  require_calibrated_for_skip: true
+# Para ejecutar el juez profundo existente, configurar judge_model con la
+# referencia completa proveedor/despliegue/modelo. Sin él, la revisión queda
+# pendiente y aparece así en el informe.

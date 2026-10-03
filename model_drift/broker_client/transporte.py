@@ -52,6 +52,8 @@ class TransporteBroker:
         self.performs_auxiliary_invocations = True
         #: `auxiliary_invocations_optout`: si acepta apagarlas en la petición.
         self.supports_auxiliary_optout = False
+        self._system1_available: bool | None = None
+        self._system1_evaluation_available = False
 
     # ---------------------------------------------------------------- infra
 
@@ -77,6 +79,8 @@ class TransporteBroker:
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         try:
             response = self._client.request(method, url, headers=self._headers(), **kwargs)
+        except httpx.TimeoutException as error:
+            raise BrokerError("se agotó el plazo de la petición al Broker", code="TIMEOUT") from error
         except httpx.HTTPError as error:
             raise BrokerError(f"no se pudo contactar con el Broker: {error}") from error
         if response.status_code >= 400:

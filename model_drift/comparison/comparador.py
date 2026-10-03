@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from model_drift.broker_client import BrokerClient
 from model_drift.cases import Suite
 from model_drift.comparison.contraste import (
     _direction_for_case,
@@ -25,6 +26,7 @@ from model_drift.domain import (
     Comparability,
     ComparisonOutcome,
 )
+from model_drift.judge import Judge
 from model_drift.manifest import ComparabilityReport, compare_manifests
 from model_drift.policy import RegressionPolicy, evaluate_policy
 from model_drift.statistics import (
@@ -35,6 +37,8 @@ from model_drift.statistics import (
     mcnemar_exact,
     minimum_detectable_effect,
 )
+from model_drift.system1 import review_semantic_pairs
+from model_drift.system1_contracts import System1Config
 from model_drift.taxonomy import classify_change
 
 #: Un caso crudo antes de corregir por comparaciones múltiples.
@@ -89,6 +93,9 @@ def compare_runs(
     policy: RegressionPolicy | None = None,
     judge_calibrated: bool = False,
     judged_cases: set[str] | None = None,
+    system1: System1Config | None = None,
+    broker: BrokerClient | None = None,
+    judge: Judge | None = None,
 ) -> ComparisonReport:
     """Compara dos tiradas y produce el informe completo."""
     contexto = _Contexto(
@@ -114,7 +121,13 @@ def compare_runs(
         outcomes.extend(resultados_metrica)
         por_metrica[metrica] = resultados_metrica
 
-    return _informe(outcomes, por_metrica, contexto, recuento)
+    report = _informe(outcomes, por_metrica, contexto, recuento)
+    if system1 is not None and system1.enabled:
+        report.semantic_review = review_semantic_pairs(
+            report, baseline, candidate, suite=suite, policy=contexto.policy,
+            config=system1, client=broker, judge=judge,
+        )
+    return report
 
 
 # ------------------------------------------------------------------ métricas

@@ -15,7 +15,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -141,6 +141,21 @@ CREATE TABLE IF NOT EXISTS comparison (
     notes_json       TEXT,
     PRIMARY KEY (baseline_run_id, candidate_run_id, case_id, metric)
 );
+"""
+
+
+SCHEMA += """
+CREATE TABLE IF NOT EXISTS comparison_review (
+    review_id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    baseline_run_id TEXT NOT NULL,
+    candidate_run_id TEXT NOT NULL,
+    baseline_model_key TEXT NOT NULL,
+    candidate_model_key TEXT NOT NULL,
+    review_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_comparison_review_runs
+    ON comparison_review(baseline_run_id, candidate_run_id);
 """
 
 

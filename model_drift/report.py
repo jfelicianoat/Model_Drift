@@ -212,6 +212,31 @@ declarada y de quien la escribió.</p>
 </table>
 </div>
 
+{% if informe.semantic_review %}
+{% set review = informe.semantic_review %}
+<h2>Revisión semántica orientativa · System 1</h2>
+<p>{{ 'Modo sombra: registra propuestas sin cambiar el veredicto ni omitir análisis.'
+       if review.config.shadow_mode else 'Modo activo: prioriza análisis y conserva las reglas de evidencia.' }}</p>
+<p>La confianza es una puntuación del proveedor. No demuestra una probabilidad de acierto calibrada.</p>
+<p>Pares: {{ review.metrics.pairs_evaluated }} · resueltos con checks: {{ review.metrics.deterministic_pairs }} ·
+   enviados a System 1: {{ review.metrics.system1_pairs }} ·
+   candidatos sobre umbral: {{ review.metrics.regression_candidates }} ·
+   jueces ejecutados: {{ review.metrics.deep_analysis_executed }} · fallbacks: {{ review.metrics.fallbacks }}</p>
+<div class="tabla-scroll"><table>
+  <tr><th>Caso</th><th>Juicio orientativo</th><th>Confianza</th><th>Prioridad</th><th>Análisis profundo</th></tr>
+  {% for item in review.assessments %}
+  <tr><td>{{ item.case_id }}</td><td>{{ etiquetas_semanticas[item.classification] }}</td>
+      <td>{{ '%.3f'|format(item.confidence) if item.confidence is not none else '—' }}</td>
+      <td>{{ {'normal': 'normal', 'review': 'revisar', 'high': 'alta'}[item.priority] }}</td>
+      <td>{{ 'juez ejecutado' if item.deep_analysis_executed else
+             'pendiente' if item.deep_analysis_required else 'no requerido' }}</td></tr>
+  {% endfor %}
+</table></div>
+<details><summary>Auditoría: checks, proveedor, fallback, umbrales y decisiones</summary>
+  <pre><code>{{ review.model_dump_json(indent=2) }}</code></pre>
+</details>
+{% endif %}
+
 <!-- 6. JUEZ -->
 {% if juez %}
 <h2>El juez como instrumento</h2>
@@ -304,6 +329,12 @@ def render_comparison(
         juez=judge_metrics,
         etiqueta_veredicto=VERDICT_LABELS.get(informe.verdict.verdict, "—") if informe.verdict else "—",
         etiquetas_practicas=PRACTICAL_LABELS,
+        etiquetas_semanticas={
+            "equivalent": "equivalente",
+            "changed_but_not_regression": "cambio sin regresión propuesta",
+            "regression_candidate": "posible regresión: requiere análisis",
+            "uncertain": "incierto",
+        },
     )
 
 
@@ -352,5 +383,18 @@ def render_text_summary(informe: ComparisonReport) -> str:
         lineas.append("Cambios detectados SIN dirección evaluable (hace falta oráculo, relación o juez calibrado):")
         for outcome in sin_direccion:
             lineas.append(f"  - {outcome.case_id} [{outcome.metric}]")
+    if informe.semantic_review is not None:
+        review = informe.semantic_review
+        metrics = review.metrics
+        lineas.extend([
+            "",
+            f"System 1 ({'sombra' if review.config.shadow_mode else 'activo'}): "
+            f"{metrics.system1_pairs} pares enviados · {metrics.regression_candidates} candidatos sobre umbral · "
+            f"{metrics.deep_analysis_executed} análisis ejecutados · {metrics.fallbacks} fallbacks.",
+        ])
+        for item in review.assessments:
+            pending = " · análisis pendiente" if item.deep_analysis_required and not item.deep_analysis_executed else ""
+            lineas.append(f"  - {item.case_id}: {item.classification} · {item.priority}{pending} "
+                          f"({item.reason_code or item.provider or item.source})")
     return "\n".join(lineas)
 

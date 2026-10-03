@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from model_drift.broker_client import BrokerConfig
 from model_drift.broker_contracts import ModelReference
+from model_drift.system1_contracts import System1Config
 
 ENV_TOKEN = "MODEL_DRIFT_BROKER_TOKEN"
 ENV_BASE_URL = "MODEL_DRIFT_BROKER_URL"
@@ -44,6 +45,7 @@ class AppConfig(BaseModel):
     embedding_model: str | None = None
     #: Modelo juez. Sin él, la escalera se queda en el escalón determinista.
     judge_model: str | None = None
+    system1: System1Config = Field(default_factory=System1Config)
 
     #: Ejecutar código generado por un modelo exige decisión explícita.
     allow_code_execution: bool = False

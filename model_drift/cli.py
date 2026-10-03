@@ -29,6 +29,7 @@ from model_drift.broker_client import BrokerClient
 from model_drift.broker_contracts import ModelCatalogEntry
 from model_drift.cases import load_suite
 from model_drift.comparison import RunResults, compare_runs
+from model_drift.comparison.service import compare_configured
 from model_drift.config import AppConfig
 from model_drift.db import Database
 from model_drift.domain import CaseOutcome, RunVerdict
@@ -221,7 +222,10 @@ def cmd_comparar(args: argparse.Namespace, config: AppConfig) -> int:
 
     clave_base = args.modelo_base or next(iter(base))
     clave_cand = args.modelo_candidato or next(iter(candidata))
-    informe = compare_runs(base[clave_base], candidata[clave_cand], suite=suite, policy=politica)
+    informe = compare_configured(
+        base[clave_base], candidata[clave_cand], config=config, suite=suite, policy=politica,
+        client_factory=lambda: _client(config),
+    )
 
     print(render_text_summary(informe))
 

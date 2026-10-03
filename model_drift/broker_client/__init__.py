@@ -24,10 +24,11 @@ método.
 from __future__ import annotations
 
 from model_drift.broker_client.invocacion import InvocacionMixin
+from model_drift.broker_client.semantica import System1Mixin
 from model_drift.broker_client.tipos import ORIGIN, BrokerConfig, InvocationOutcome
 
 __all__ = ["ORIGIN", "BrokerClient", "BrokerConfig", "InvocationOutcome"]
 
 
-class BrokerClient(InvocacionMixin):
+class BrokerClient(System1Mixin, InvocacionMixin):
     """Cliente síncrono. Una tirada es un lote largo, no una interacción."""

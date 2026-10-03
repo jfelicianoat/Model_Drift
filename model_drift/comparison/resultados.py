@@ -9,6 +9,7 @@ from model_drift.comparison.evidencia import OPERATIONAL_METRICS
 from model_drift.domain import CaseOutcome, ChangeStatus, ComparisonOutcome
 from model_drift.manifest import ComparabilityReport, RunManifest
 from model_drift.policy import RunVerdictReport
+from model_drift.system1_contracts import SemanticReview
 
 
 class ComparisonReport(BaseModel):
@@ -27,6 +28,7 @@ class ComparisonReport(BaseModel):
     n_unstable: int = 0
     minimum_detectable_effect: float | None = None
     notes: list[str] = Field(default_factory=list)
+    semantic_review: SemanticReview | None = None
 
     def by_status(self, status: ChangeStatus) -> list[ComparisonOutcome]:
         return [item for item in self.outcomes if item.change_status is status]

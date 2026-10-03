@@ -12,7 +12,8 @@ from tkinter import messagebox
 
 from model_drift.cases import Suite, load_suite
 from model_drift.cli import _load_run
-from model_drift.comparison import ComparisonReport, compare_runs
+from model_drift.comparison import ComparisonReport
+from model_drift.comparison.service import compare_configured
 from model_drift.db import Database
 from model_drift.domain import ChangeDirection, ChangeStatus
 from model_drift.gui.base import VentanaBase
@@ -49,6 +50,7 @@ class ComparacionMixin(VentanaBase):
         ruta_politica = self.var_politica_cmp.get().strip()
         manifiesto = self._manifiestos.get(candidata, {})
         ruta_suite = manifiesto.get("suite_path")
+        broker_url, broker_token = self._credenciales()
 
         def trabajo() -> Mensaje:
             suite: Suite | None = None
@@ -58,11 +60,13 @@ class ComparacionMixin(VentanaBase):
             with Database(self.config_app.database) as db:
                 _, resultados_base = _load_run(db, base)
                 _, resultados_cand = _load_run(db, candidata)
-            informe = compare_runs(
+            informe = compare_configured(
                 next(iter(resultados_base.values())),
                 next(iter(resultados_cand.values())),
                 suite=suite,
                 policy=politica,
+                config=self.config_app,
+                client_factory=lambda: self._cliente(broker_url, broker_token),
             )
             return Mensaje("comparacion", (informe, base, candidata, suite is None))
 
@@ -88,12 +92,23 @@ class ComparacionMixin(VentanaBase):
         self._pintar_casos(informe)
         self._generar_informe(informe, base, candidata)
 
+    @staticmethod
+    def _semantic_priority(informe: ComparisonReport, case_id: str) -> int:
+        review = informe.semantic_review
+        if review is None or review.config.shadow_mode:
+            return 2
+        assessment = next((item for item in review.assessments if item.case_id == case_id), None)
+        return {"high": 0, "review": 1, "normal": 2}[assessment.priority] if assessment else 2
+
     def _pintar_casos(self, informe: ComparisonReport) -> None:
         """Vuelca la tabla de casos, con los accionables primero."""
         self.tabla_casos.delete(*self.tabla_casos.get_children())
         ordenados = sorted(
             informe.outcomes,
-            key=lambda item: (0 if item.is_actionable else 1 if item.is_regression else 2, item.case_id, item.metric),
+            key=lambda item: (
+                0 if item.is_actionable else 1 if item.is_regression else 2,
+                self._semantic_priority(informe, item.case_id), item.case_id, item.metric,
+            ),
         )
         for outcome in ordenados:
             etiqueta = ""
