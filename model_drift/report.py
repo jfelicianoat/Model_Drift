@@ -23,6 +23,7 @@ from pathlib import Path
 
 from jinja2 import Environment, select_autoescape
 
+from model_drift.calibration.models import CalibrationReport
 from model_drift.comparison import ComparisonReport
 from model_drift.domain import (
     ChangeDirection,
@@ -397,4 +398,71 @@ def render_text_summary(informe: ComparisonReport) -> str:
             lineas.append(f"  - {item.case_id}: {item.classification} · {item.priority}{pending} "
                           f"({item.reason_code or item.provider or item.source})")
     return "\n".join(lineas)
+
+
+def render_calibration_summary(report: CalibrationReport) -> str:
+    names = {"calibrado": "Calibrado", "no_calibrado": "No calibrado", "indeterminado": "Indeterminado"}
+    headline = "Caducado" if report.expired else names[report.status]
+    lines = [f"{headline} para {report.use_case}",
+             f"Alumno servido: {report.learner_provider or '?'} / {report.learner_model or '?'}",
+             f"Maestro: {report.human_cases} casos humanos · "
+             f"kappa {report.teacher_kappa if report.teacher_kappa is not None else 'no medido'}",
+             f"Casos ambiguos excluidos: {report.ambiguous_cases}"]
+    if report.recommended_threshold is not None and not report.expired:
+        lines.append(f"Umbral: {report.recommended_threshold:.4f} · precisión en prueba {report.test_precision:.2%} "
+                     f"(cota inferior {report.test_precision_lower:.2%}) · cobertura {report.test_coverage:.2%}")
+    lines.extend(f"- {reason}" for reason in report.reasons + report.limitations)
+    if report.metrics.get("synthetic_diagnostics"):
+        lines.append("Diagnóstico exploratorio frente a etiquetas sintéticas; no valida el maestro frente a humanos.")
+    lines.append("Etiquetas destiladas de System 2; su procedencia se conserva separada de las etiquetas humanas.")
+    return "\n".join(lines)
+
+
+def write_calibration(report: CalibrationReport, path: str | Path) -> Path:
+    template = Environment(autoescape=select_autoescape(default=True)).from_string(_ESTILO + """
+<h1>Prueba y calibración de System 1</h1>
+<p>{{ report.use_case }} · {{ report.created_at }}</p>
+<pre>{{ summary }}</pre>
+<p>El umbral se elige en calibración y se valida en una prueba separada. Las notas crudas
+rechazadas por el Broker se usan para medir fiabilidad; ninguna activa una decisión de negocio.</p>
+{% if report.previous_comparison %}
+<h2>Comparación con la prueba anterior</h2><pre>{{ report.previous_comparison | tojson(indent=2) }}</pre>
+{% endif %}
+{% set synthetic = report.metrics.get('synthetic_diagnostics') %}
+{% if synthetic %}
+<h2>Diagnóstico exploratorio con etiquetas sintéticas</h2>
+<p>Estas etiquetas fueron redactadas para explorar errores. Su acuerdo no verifica al maestro
+frente a humanos ni permite recomendar un umbral de producción.</p>
+<table><tr><th>Medida</th><th>Casos</th><th>Resultado</th></tr>
+<tr><td>Acuerdo del maestro con la referencia sintética</td>
+<td>{{ synthetic.teacher_unanimous_cases }}</td><td>Kappa {{ synthetic.teacher_agreement_kappa }}</td></tr>
+<tr><td>Acierto del alumno en prueba, incluidas notas nativas rechazadas</td>
+<td>{{ synthetic.raw_test.n }}</td><td>{{ synthetic.raw_test.accuracy }}</td></tr>
+<tr><td>Acierto del alumno aceptado por el Broker</td>
+<td>{{ synthetic.accepted_test.n }}</td><td>{{ synthetic.accepted_test.accuracy }}</td></tr>
+<tr><td>Acierto del alumno en adversarios de prueba</td>
+<td>{{ synthetic.adversarial_raw_test.n }}</td><td>{{ synthetic.adversarial_raw_test.accuracy }}</td></tr>
+</table>
+{% endif %}
+<h2>Fiabilidad en la partición de prueba</h2>
+<table><tr><th>Tramo</th><th>Casos</th><th>Confianza media</th><th>Acierto</th><th>Intervalo exacto</th></tr>
+{% for bin in report.metrics.get('test_reliability', {}).get('bins', []) %}
+<tr><td>{{ bin.low }}–{{ bin.high }}</td><td>{{ bin.n }}</td><td>{{ bin.mean_confidence }}</td>
+<td>{{ bin.accuracy }}</td><td>{{ bin.ci_low }}–{{ bin.ci_high }}</td></tr>
+{% endfor %}</table>
+<h2>Discrepancias y abstenciones</h2>
+<table><tr><th>Caso</th><th>Partición</th><th>Maestro</th><th>Alumno</th><th>Nota válida</th><th>Motivo</th></tr>
+{% for note in report.notes %}
+<tr><td>{{ note.case_id }}</td><td>{{ note.partition }}</td><td>{{ note.reference }}</td>
+<td>{{ note.decision }}</td><td>{{ note.valid_score }}</td><td>{{ note.reason_code or '—' }}</td></tr>
+{% endfor %}</table>
+<h2>Métricas y procedencia</h2><pre>{{ report.metrics | tojson(indent=2) }}</pre>
+<details><summary>Artefacto versionado, huellas, plan y etiquetas</summary>
+<pre>{{ report.model_dump_json(indent=2) }}</pre></details>
+<p>Esta prueba no cambia umbrales del Broker ni políticas de otras aplicaciones.</p>
+""")
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(template.render(report=report, summary=render_calibration_summary(report)), encoding="utf-8")
+    return destination
 

@@ -1,4 +1,5 @@
 """Intervalos exactos Clopper-Pearson, sin aproximación normal ni dependencias."""
+
 from __future__ import annotations
 
 import math
@@ -35,8 +36,7 @@ def _beta_cdf(x: float, a: float, b: float) -> float:
         return 0.0
     if x >= 1:
         return 1.0
-    bt = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
-                  + a * math.log(x) + b * math.log1p(-x))
+    bt = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log1p(-x))
     if x < (a + 1.0) / (a + b + 2.0):
         return bt * _beta_fraction(a, b, x) / a
     return 1.0 - bt * _beta_fraction(b, a, 1.0 - x) / b

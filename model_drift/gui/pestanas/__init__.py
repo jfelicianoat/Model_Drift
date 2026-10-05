@@ -8,6 +8,7 @@ cuelga del `Notebook`.
 """
 from __future__ import annotations
 
+from model_drift.gui.pestanas.calibration import construir as construir_calibration
 from model_drift.gui.pestanas.comparar import construir as construir_comparar
 from model_drift.gui.pestanas.ejecutar import construir as construir_ejecutar
 from model_drift.gui.pestanas.filtros import barra_filtros
@@ -17,6 +18,7 @@ from model_drift.gui.pestanas.tiradas import construir as construir_tiradas
 __all__ = [
     "barra_filtros",
     "construir_comparar",
+    "construir_calibration",
     "construir_ejecutar",
     "construir_modelos",
     "construir_tiradas",

@@ -473,7 +473,7 @@ def test_el_entregable_se_cierra_por_el_artefacto_final() -> None:
         cliente.probe_contract()
         resultado = cliente.invoke(prompt="hola", target=VIEJO)
 
-    assert resultado.deliverable_sha256 == hashlib.sha256("la respuesta".encode("utf-8")).hexdigest()
+    assert resultado.deliverable_sha256 == hashlib.sha256(b"la respuesta").hexdigest()
 
 
 def test_sin_artefactos_canonicos_no_se_inventa_una_huella_del_entregable() -> None:

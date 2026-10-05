@@ -33,6 +33,7 @@ system1:
   enabled: false
   shadow_mode: true
   use_case: model_drift_semantic
+  threshold_profile: default
   timeout_seconds: 75.0
   cloud_allowed: false
   regression_threshold: 0.80

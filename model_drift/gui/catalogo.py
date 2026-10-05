@@ -6,7 +6,11 @@ fiable la elección es que un filtro no la borre por detrás.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from model_drift.broker_contracts import ModelCatalogEntry, ModelReference
+from model_drift.calibration.runner import revalidate_changed
+from model_drift.db import Database
 from model_drift.gui.base import VentanaBase
 from model_drift.gui.comunes import REMOTOS, Mensaje, _tri
 
@@ -97,15 +101,28 @@ class CatalogoMixin(VentanaBase):
         self.estado.set("Consultando el catálogo del Broker…")
 
         base_url, token = self._credenciales()
+        self.cancelar.clear()
 
         def trabajo() -> Mensaje:
             with self._cliente(base_url, token) as cliente:
-                return Mensaje("catalogo", cliente.catalog(refresh=True))
+                entries = cliente.catalog(refresh=True)
+                self.cola.put(Mensaje("catalogo", entries))
+                with Database(self.config_app.database) as db:
+                    reports = revalidate_changed(
+                        cliente, db, self.config_app.reports_dir, cancel=self.cancelar,
+                        progress=lambda text: self.cola.put(Mensaje("log", text)),
+                    )
+                if reports:
+                    report = reports[-1]
+                    return Mensaje("calibration", (report, Path(report.artifact_html_path or "")))
+                return Mensaje("log", "Catálogo actualizado.")
 
         self._en_hilo(trabajo)
 
     def _pintar_catalogo(self, entradas: list[ModelCatalogEntry]) -> None:
         self.catalogo = entradas
+        if hasattr(self, "cal_teacher_combo"):
+            self.cal_teacher_combo["values"] = sorted(item.key for item in entradas if item.dispatchable)
         # Las opciones salen de lo que hay, no de una lista fija: si mañana
         # aparece un proveedor nuevo, el filtro lo ofrece sin tocar código.
         proveedores = ["todos", *sorted({item.provider for item in entradas})]

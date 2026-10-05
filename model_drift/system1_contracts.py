@@ -1,7 +1,7 @@
 """Configuración y auditoría del priorizador semántico; no son evidencia de dirección."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -41,6 +41,10 @@ class System1Attempt(BaseModel):
     reason_code: str | None = None
     tokens_input: int | None = Field(default=None, ge=0)
     tokens_output: int | None = Field(default=None, ge=0)
+    decision: Any = None
+    confidence: Any = None
+    alternatives: list[dict[str, Any]] = Field(default_factory=list)
+    score_source: str | None = None
 
 
 class System1Alternative(BaseModel):

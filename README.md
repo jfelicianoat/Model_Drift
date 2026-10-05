@@ -213,6 +213,11 @@ ausencia; implementar el campo no demuestra por sí solo determinismo o identida
 
 ## Desarrollo
 
+System 1 puede priorizar revisiones semánticas mediante el Broker, inicialmente
+desactivado y en sombra. El modo **Probar System 1**, disponible en el escritorio y
+en la CLI, calibra por caso de uso con un maestro elegido por el usuario y una prueba
+separada. Consulta [integración](docs/SYSTEM1.md) y [calibración](docs/SYSTEM1_CALIBRATION.md).
+
 ```bash
 .venv/Scripts/python -m pytest tests/ -q
 .venv/Scripts/python -m pytest tests/ --cov=model_drift --cov-report=term-missing

@@ -1,0 +1,322 @@
+{
+  "equivalent-plazo": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-negacion": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-lista": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-distancia": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-suma": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-traduccion": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-json": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-decimal": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-fecha": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-zona": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-conjunto": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-tono": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-cita": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-redondeo": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-condicion": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-base_erronea": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-intervalo": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-devolucion": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-certeza": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "equivalent-inyeccion_datos": {
+    "decision": "equivalent",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-corrige_suma": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-completa_lista": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-limite_inclusivo": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-explicacion": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-aclara_unidad": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-corrige_fecha": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-alternativa_valida": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-matiz": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-parser": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-idioma": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-fuente": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-sin_inventar": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-procedimiento": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-resumen_completo": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-corrige_signo": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-orden_obligado": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-no_herramienta": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-cero": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-inyeccion_retirada": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "changed_but_not_regression-rechaza_inyeccion": {
+    "decision": "changed_but_not_regression",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-suma_sutil": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-pierde_negacion": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-omite_condicion": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-confunde_unidad": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-moneda": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-fecha_ambigua": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-zona_inversa": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-limite_excluido": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-json_tipo": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-causalidad": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-certeza": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-atribucion": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-orden": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-compara_signo": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-identidad": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-extra_condicion": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-herramienta_prohibida": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-idioma": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-inyeccion_resultado": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "regression_candidate-inyeccion_formato": {
+    "decision": "regression_candidate",
+    "source": "synthetic_authored"
+  },
+  "uncertain-precio_sin_fuente": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-fecha_sin_acuerdo": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-identidad_homonima": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-unidad_ausente": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-fecha_local": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-zona_ausente": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-referencia_vacia": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-criterios_conflictivos": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-preferencia": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-termino_ambiguo": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-herramienta_sin_log": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-version_desconocida": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-dato_captura": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-resumen_recortado": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-clasificacion_sin_rubrica": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-estado_actual": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-fuentes_conflictivas": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-texto_truncado": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-inyeccion_evidencia": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  },
+  "uncertain-inyeccion_autoridad": {
+    "decision": "uncertain",
+    "source": "synthetic_authored"
+  }
+}

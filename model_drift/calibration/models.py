@@ -1,4 +1,5 @@
 """Plan versionado, referencias y notas en bruto de una calibración."""
+
 from __future__ import annotations
 
 import hashlib
@@ -43,10 +44,12 @@ class CalibrationConfig(BaseModel):
     teacher_timeout_seconds: int = Field(default=300, gt=0)
     min_teacher_kappa: float = Field(default=0.8, ge=0, le=1)
     min_human_cases: int = Field(default=50, ge=2)
+    max_human_class_ratio: float = Field(default=0.8, ge=0.5, lt=1)
     target_precision: float = Field(default=0.99, gt=0, lt=1)
     min_calibration_cases: int = Field(default=50, ge=1)
     min_test_cases: int = Field(default=50, ge=1)
     confidence_level: float = Field(default=0.95, gt=0, lt=1)
+    drift_alpha: float = Field(default=0.05, gt=0, lt=1)
     reliability_edges: list[float] = Field(default_factory=lambda: [0, 0.90, 0.95, 0.97, 0.99, 1.0])
     calibration_fraction: float = Field(default=0.6, gt=0, lt=1)
     seed: int = 1234
@@ -56,6 +59,7 @@ class CalibrationConfig(BaseModel):
     cloud_allowed_teacher: bool = False
     cloud_allowed_learner: bool = False
     timeout_seconds: float = Field(default=75.0, gt=0)
+    revalidate_on_fingerprint_change: bool = True
 
     def domain(self) -> list[Decision]:
         if self.decision_type == "binary":
@@ -67,15 +71,23 @@ class CalibrationConfig(BaseModel):
             return bool(value)
         if self.decision_type == "choice" and isinstance(value, str) and value in self.options:
             return value
-        if (self.decision_type == "score" and type(value) in (int, float)
-            and math.isfinite(value) and float(value).is_integer() and 0 <= value < len(self.rubric)):
+        if (
+            self.decision_type == "score"
+            and type(value) in (int, float)
+            and math.isfinite(value)
+            and float(value).is_integer()
+            and 0 <= value < len(self.rubric)
+        ):
             return int(value)
         raise ValueError("decisión fuera del tipo o dominio solicitado")
 
     def request(self, data: dict[str, Any], *, local_only: bool, target: EvaluationTarget | None) -> dict[str, Any]:
         payload: dict[str, Any] = {
-            "use_case": self.use_case, "decision_type": self.decision_type, "instructions": self.instructions,
-            "threshold_profile": self.threshold_profile, "input": data,
+            "use_case": self.use_case,
+            "decision_type": self.decision_type,
+            "instructions": self.instructions,
+            "threshold_profile": self.threshold_profile,
+            "input": data,
             "cloud_allowed": self.cloud_allowed_learner and not local_only,
         }
         if self.decision_type == "choice":
@@ -103,7 +115,12 @@ class CalibrationConfig(BaseModel):
         elif self.rubric:
             raise ValueError("rubric solo se permite en score")
         edges = self.reliability_edges
-        if len(edges) < 2 or edges[0] != 0 or edges[-1] != 1 or any(a >= b for a, b in zip(edges, edges[1:])):
+        if (
+            len(edges) < 2
+            or edges[0] != 0
+            or edges[-1] != 1
+            or any(a >= b for a, b in zip(edges, edges[1:], strict=False))
+        ):
             raise ValueError("tramos de fiabilidad: ordenados, desde 0 hasta 1")
         for value in self.auto_approve_values:
             self.normalize(value)
@@ -119,6 +136,8 @@ class CalibrationCase(BaseModel):
     human_label: Any = None
     human_verified: bool = False
     adversarial: bool = False
+    expected_label: Any = None
+    expected_label_source: Literal["synthetic_authored"] | None = None
 
     @property
     def local_only(self) -> bool:
@@ -141,6 +160,10 @@ class CalibrationPlan(BaseModel):
         for case in self.cases:
             if case.human_verified:
                 self.config.normalize(case.human_label)
+            if case.expected_label_source is not None:
+                self.config.normalize(case.expected_label)
+            elif case.expected_label is not None:
+                raise ValueError("expected_label requiere una procedencia explícita")
         return self
 
     @classmethod
@@ -186,6 +209,7 @@ class LearnerNote(BaseModel):
     reference: Any = None
     reference_eligible: bool = False
     adversarial: bool = False
+    raw_response: dict[str, Any] = Field(default_factory=dict)
 
 
 class CalibrationReport(BaseModel):
@@ -218,3 +242,6 @@ class CalibrationReport(BaseModel):
     test_precision_upper: float | None = None
     test_coverage: float | None = None
     previous_comparison: dict[str, Any] | None = None
+    expired: bool = False
+    artifact_json_path: str | None = None
+    artifact_html_path: str | None = None

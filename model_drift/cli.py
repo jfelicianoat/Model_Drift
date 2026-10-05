@@ -27,6 +27,8 @@ from pathlib import Path
 
 from model_drift.broker_client import BrokerClient
 from model_drift.broker_contracts import ModelCatalogEntry
+from model_drift.calibration.models import CalibrationPlan
+from model_drift.calibration.runner import export_distilled, revalidate_changed, run_calibration, save_artifacts
 from model_drift.cases import load_suite
 from model_drift.comparison import RunResults, compare_runs
 from model_drift.comparison.service import compare_configured
@@ -37,7 +39,7 @@ from model_drift.external_treatments import load_external_treatments
 from model_drift.manifest import RunManifest
 from model_drift.metamorphic import load_relations
 from model_drift.policy import RegressionPolicy
-from model_drift.report import render_text_summary, write_comparison
+from model_drift.report import render_calibration_summary, render_text_summary, write_comparison
 from model_drift.runner import RunConfig, Runner
 from model_drift.statistics import minimum_detectable_effect, power_curve
 
@@ -268,6 +270,34 @@ def cmd_evaluar_tratamientos(args: argparse.Namespace, config: AppConfig) -> int
     return EXIT_OK
 
 
+def cmd_probar_system1(args: argparse.Namespace, config: AppConfig) -> int:
+    plan = CalibrationPlan.load(args.plan)
+    if args.maestro:
+        plan.config.teacher_task = config.model_reference(args.maestro)
+        plan.config.teacher_judge = None
+    with _client(config) as client, Database(config.database) as db:
+        report = run_calibration(client, plan, db, progress=lambda message: print(message))
+        if args.exportar_referencias:
+            export_distilled(db, report, args.exportar_referencias)
+        artifact = Path(args.artefacto) if args.artefacto else Path(config.reports_dir) / f"{report.run_id}.json"
+        html = save_artifacts(db, report, artifact, args.informe or artifact.with_suffix(".html"))
+    print(render_calibration_summary(report))
+    print(f"Artefacto: {artifact}\nInforme: {html}")
+    return EXIT_ERROR if any(reason.startswith("Tirada fallida") for reason in report.reasons) else EXIT_OK
+
+
+def cmd_revalidar_system1(args: argparse.Namespace, config: AppConfig) -> int:
+    with _client(config) as client, Database(config.database) as db:
+        client.catalog(refresh=True)
+        reports = revalidate_changed(client, db, config.reports_dir, progress=print)
+    if not reports:
+        print("No se detectaron cambios de huella en los planes guardados.")
+    for report in reports:
+        print(render_calibration_summary(report))
+    failed = any(any(reason.startswith("Tirada fallida") for reason in report.reasons) for report in reports)
+    return EXIT_ERROR if failed else EXIT_OK
+
+
 def cmd_tiradas(args: argparse.Namespace, config: AppConfig) -> int:
     with Database(config.database) as db:
         filas = db.runs(limit=args.limite)
@@ -360,6 +390,18 @@ def build_parser() -> argparse.ArgumentParser:
     potencia.add_argument("--casos", type=int, required=True)
     potencia.add_argument("--tasa-base", dest="tasa_base", type=float, default=0.9)
 
+    calibration = subparsers.add_parser(
+        "probar-system1", help="prueba y calibra un System 1 contra un maestro System 2",
+    )
+    calibration.add_argument("--plan", required=True, help="plan JSON con casos, producción, alumno y maestro")
+    calibration.add_argument("--maestro", help="referencia completa del maestro, para sobrescribir la del plan")
+    calibration.add_argument("--artefacto", help="artefacto JSON versionado")
+    calibration.add_argument("--informe", help="informe HTML")
+    calibration.add_argument(
+        "--exportar-referencias", help="exportar casos, etiquetas y procedencia para reutilización",
+    )
+    subparsers.add_parser("revalidar-system1", help="repite automáticamente los planes cuyas huellas hayan cambiado")
+
     return parser
 
 
@@ -377,6 +419,8 @@ def main(argv: list[str] | None = None) -> int:
         "evaluar-tratamientos": cmd_evaluar_tratamientos,
         "tiradas": cmd_tiradas,
         "potencia": cmd_potencia,
+        "probar-system1": cmd_probar_system1,
+        "revalidar-system1": cmd_revalidar_system1,
     }
     try:
         return comandos[args.comando](args, config)

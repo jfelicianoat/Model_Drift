@@ -129,7 +129,54 @@ def test_la_ventana_se_construye_entera(ventana) -> None:  # type: ignore[no-unt
         "Ejecutar tirada",
         "Tiradas",
         "Comparar",
+        "Probar System 1",
     ]
+
+
+def test_calibration_requires_a_plan(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
+    app, _, _ = ventana
+    app.probar_system1()
+    assert "plan de calibración" in dialogos["aviso"][-1]
+
+
+def test_calibration_worker_captures_widgets_and_paints_report(ventana, monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from tests.test_calibration import EvaluationBroker, _plan
+
+    app, _, _ = ventana
+    plan_path = tmp_path / "calibration.json"
+    plan_path.write_text(_plan(n=4).model_dump_json(), encoding="utf-8")
+    app.var_cal_plan.set(str(plan_path))
+    app.var_cal_teacher.set("ollama/local/qwen3:8b")
+    app.var_cal_provider.set("ollama_system1")
+    app.var_cal_model.set("native")
+    jobs = []
+    monkeypatch.setattr(app, "_en_hilo", jobs.append)
+    monkeypatch.setattr(app, "_cliente", lambda *args: EvaluationBroker().client())
+    app.probar_system1()
+
+    def forbidden():  # type: ignore[no-untyped-def]
+        raise AssertionError("el hilo leyó un widget")
+
+    for variable in (app.var_cal_plan, app.var_cal_teacher, app.var_cal_provider, app.var_cal_model):
+        monkeypatch.setattr(variable, "get", forbidden)
+    message = jobs[0]()
+    assert message.tipo == "calibration"
+    report, html = message.dato
+    assert report.config.teacher_task.model == "qwen3:8b"
+    assert html.exists() and report.status == "indeterminado"
+    app._atender(message)
+    assert "Indeterminado" in app.cal_summary.get("1.0", "end")
+    opened = []
+    monkeypatch.setattr("model_drift.gui.calibration.webbrowser.open", opened.append)
+    app.abrir_informe_calibracion()
+    assert opened == [html.resolve().as_uri()]
+
+
+def test_calibration_plan_dialog(ventana, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    app, _, _ = ventana
+    monkeypatch.setattr("model_drift.gui.calibration.filedialog.askopenfilename", lambda **kwargs: "plan.json")
+    app.elegir_plan_calibracion()
+    assert app.var_cal_plan.get() == "plan.json"
 
 
 def test_la_ventana_arranca_con_las_tiradas_ya_cargadas(ventana) -> None:  # type: ignore[no-untyped-def]

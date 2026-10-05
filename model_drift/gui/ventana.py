@@ -25,13 +25,14 @@ from tkinter import StringVar, messagebox, ttk
 
 from model_drift.config import AppConfig
 from model_drift.gui import pestanas
+from model_drift.gui.calibration import CalibrationMixin
 from model_drift.gui.comparacion import ComparacionMixin
 from model_drift.gui.comunes import Mensaje
 from model_drift.gui.ejecucion import EjecucionMixin
 from model_drift.runner import RunProgress
 
 
-class ModelDriftGUI(EjecucionMixin, ComparacionMixin):
+class ModelDriftGUI(EjecucionMixin, ComparacionMixin, CalibrationMixin):
     """Ventana principal de Model_Drift."""
 
     def __init__(self, config: AppConfig | None = None, master: tk.Misc | None = None) -> None:
@@ -55,6 +56,7 @@ class ModelDriftGUI(EjecucionMixin, ComparacionMixin):
         self.pestanas.add(pestanas.construir_ejecutar(self), text="  Ejecutar tirada  ")
         self.pestanas.add(pestanas.construir_tiradas(self), text="  Tiradas  ")
         self.pestanas.add(pestanas.construir_comparar(self), text="  Comparar  ")
+        self.pestanas.add(pestanas.construir_calibration(self), text="  Probar System 1  ")
 
         barra = ttk.Frame(self)
         barra.pack(fill="x", side="bottom")
@@ -97,6 +99,8 @@ class ModelDriftGUI(EjecucionMixin, ComparacionMixin):
             self._tirada_terminada(mensaje.dato)
         elif mensaje.tipo == "comparacion":
             self._pintar_comparacion(mensaje.dato)
+        elif mensaje.tipo == "calibration":
+            self._pintar_calibracion(mensaje.dato)
         elif mensaje.tipo == "error":
             self._atender_error(mensaje.dato)
 

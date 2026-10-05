@@ -96,7 +96,11 @@ def test_semantic_classifications_do_not_create_evidence(label: str, confidence:
     assert report.outcomes[0].change_direction is ChangeDirection.sin_direccion
     assert len(requests) == 2
     body = json.loads(requests[1].content)
-    assert set(body) == {"use_case", "input", "decision_type", "options", "criteria", "instructions", "cloud_allowed"}
+    assert set(body) == {
+        "use_case", "input", "decision_type", "options", "criteria", "instructions",
+        "cloud_allowed", "threshold_profile",
+    }
+    assert body["threshold_profile"] == "default"
     assert body["cloud_allowed"] is False
     assert body["options"] == list(SEMANTIC_OPTIONS)
     assert "model_key" not in json.dumps(body) and "task_id" not in body

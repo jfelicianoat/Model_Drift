@@ -1,6 +1,6 @@
 # Contrato de integración con AI Broker
 
-Revisión: **5 de septiembre de 2026** (contrato 2.10).
+Revisión: **3 de octubre de 2026** (contrato 2.11 y ampliación §15.8).
 
 Este documento pertenece a Model_Drift y describe únicamente lo que su cliente necesita.
 No modifica ni sustituye la documentación de AI Broker.
@@ -43,7 +43,34 @@ La evidencia por invocación se persiste en la tabla `invocation`
 `auxiliary_invocations`, `auxiliary_roles_json`). El esquema sube a la versión 2 y
 la migración es aditiva: una base creada antes gana las columnas al abrirse.
 
-## Degradación explícita
+## Juicios y calibración System 1 (2.11)
+
+Los juicios directos son síncronos: `POST /api/v1/system1/judge` con
+`X-Admin-Token`, timeout HTTP configurable y sin identificadores de tarea,
+idempotencia ni sondeo. El Broker elige su orden de proveedores. Un rechazo
+mantiene el análisis previo; `fallback_used` no sustituye a `accepted`.
+
+Se consulta `system1_judgments`. Para calibrar se exige además la ampliación
+aditiva `system1_evaluation`: permite `target: {provider, model?}` sin fallback
+y notas nativas crudas en `attempts[]`, incluidas las rechazadas por umbral.
+Las capacidades se comprueban en ejecución; el número 2.11 por sí solo no las demuestra.
+
+La etiqueta de un maestro generativo en el mismo endpoint viene del intento,
+con `SELF_REPORTED_SCORE` y `accepted: false`; su confianza se ignora. El alumno
+debe tener probabilidades nativas completas. La calibración también puede usar
+un maestro fijado mediante las tareas normales del Broker.
+
+Un caso de uso propio pide `threshold_profile: default` e instrucciones explícitas
+o un perfil acordado con el operador. Las peticiones de calibración reproducen
+el perfil de producción y no rebajan sus umbrales para recuperar notas bajas.
+Los datos locales/confidenciales fuerzan la prohibición de cloud.
+
+Sin evaluación, puntuaciones completas o huella verificada se declaran limitaciones
+y no se emite umbral. La persistencia añade `comparison_review` (versión 3) y
+`calibration_run`/`calibration_case` (versión 4), con migración aditiva.
+Detalles en [SYSTEM1_CALIBRATION.md](SYSTEM1_CALIBRATION.md).
+
+## Degradación de las tareas normales
 
 - Si no existe exclusión del aprendizaje, la tirada no empieza salvo
   `--acepto-contaminar` o `accept_learning_contamination: true`.

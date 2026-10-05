@@ -1,6 +1,6 @@
 # Arquitectura vigente de Model_Drift
 
-Revisión contra el código: **23 de agosto de 2026**.
+Revisión contra el código: **3 de octubre de 2026**.
 
 ## Propósito y límite
 
@@ -15,7 +15,7 @@ la dirección evaluativa del cambio.
 suite + fixtures + política
           │
           ▼
-runner ──► cliente AI Broker 2.9 ──► modelos seleccionados
+runner ──► cliente AI Broker 2.11 ──► modelos seleccionados
   │                    │
   │                    └─ telemetría por invocación y huella observable
   ▼
@@ -50,6 +50,12 @@ en el plan.
 | Presentación | CLI, Tkinter e informe HTML | recalcular o reinterpretar el veredicto |
 
 ## Persistencia y reproducibilidad
+
+El comparador puede añadir una revisión System 1 tras los checks, sin alterar la
+estadística ni la dirección. El juez profundo existente atiende lo pendiente.
+El modo de calibración comparte cliente, medidas del juez, estadística, SQLite e
+informes con CLI y Tkinter. Consulte [SYSTEM1.md](SYSTEM1.md) y
+[SYSTEM1_CALIBRATION.md](SYSTEM1_CALIBRATION.md) para planes, privacidad y límites.
 
 Cada tirada conserva suite, configuración efectiva, hashes del instrumento, casos,
 repeticiones, resultados, telemetría y huella. Dos tiradas solo son comparables cuando sus

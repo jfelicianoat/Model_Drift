@@ -74,6 +74,13 @@ class VentanaBase(tk.Toplevel):
     boton_informe: ttk.Button
     resumen: tk.Text
     tabla_casos: ttk.Treeview
+    var_cal_plan: StringVar
+    var_cal_teacher: StringVar
+    var_cal_provider: StringVar
+    var_cal_model: StringVar
+    cal_teacher_combo: ttk.Combobox
+    cal_summary: tk.Text
+    cal_report_path: Path | None = None
 
     def __init__(self, config: AppConfig | None = None, master: tk.Misc | None = None) -> None:
         super().__init__(master)
