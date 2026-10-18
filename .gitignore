@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 .test-tmp/
+.tmp/
+tmp/
 .codex-test-tmp-phase-a/
 graphify-out/
 .mypy_cache/
