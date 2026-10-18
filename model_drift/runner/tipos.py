@@ -28,6 +28,14 @@ class RunConfig:
     allow_code_execution: bool = False
     timeout_seconds: int | None = None
 
+    def __post_init__(self) -> None:
+        # Con 0 o menos el bucle de repeticiones no itera y se guardaría una
+        # tirada «completed» que no midió nada.
+        if self.repetitions < 1:
+            raise ValueError(f"las repeticiones deben ser 1 o más (se pidieron {self.repetitions})")
+        if self.budget_usd is not None and self.budget_usd < 0:
+            raise ValueError(f"el presupuesto no puede ser negativo ({self.budget_usd})")
+
     def params(self) -> dict[str, Any]:
         return {
             "temperature": self.temperature,
@@ -74,6 +82,25 @@ class RunOutput:
     invocations: int = 0
     cost_usd: float = 0.0
     aborted_reason: str | None = None
+    #: Invocaciones sin salida evaluable, y su motivo agrupado como
+    #: «código: mensaje» -> veces. Sin esto un token caducado se veía como éxito.
+    failed_invocations: int = 0
+    errors: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def status(self) -> str:
+        """`failed` si nada produjo salida: una tirada así no midió el modelo."""
+        if self.invocations and self.failed_invocations >= self.invocations:
+            return "failed"
+        return "aborted" if self.aborted_reason else "completed"
+
+    def failure_summary(self) -> str | None:
+        """«10/10 invocaciones fallaron (AUTH: …×10)», o `None` si no falló ninguna."""
+        if not self.failed_invocations:
+            return None
+        ordenados = sorted(self.errors.items(), key=lambda kv: -kv[1])
+        motivos = ", ".join(f"{motivo} ×{veces}" for motivo, veces in ordenados)
+        return f"{self.failed_invocations}/{self.invocations} invocaciones sin salida ({motivos})"
 
     def for_model(self, model_key: str) -> RunResults | None:
         return self.results.get(model_key)

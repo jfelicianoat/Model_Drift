@@ -65,6 +65,8 @@ class InvocationOutcome:
     latency_ms: float = 0.0
     error_code: str | None = None
     error_message: str = ""
+    #: El Broker rechazó la credencial. Fallarán igual todas las siguientes.
+    auth_failed: bool = False
     fingerprint: ExecutionFingerprint = field(default_factory=ExecutionFingerprint)
     applied_params: dict[str, Any] = field(default_factory=dict)
     #: Qué hizo el Broker con la semilla. `not_requested` mientras no haya

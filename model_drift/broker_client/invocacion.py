@@ -306,6 +306,7 @@ class InvocacionMixin(HuellaMixin):
                 ok=False,
                 error_code=error.code or ("AUTH" if error.is_auth else "BROKER_ERROR"),
                 error_message=str(error),
+                auth_failed=error.is_auth,
                 latency_ms=(time.monotonic() - arranque) * 1000.0,
             )
         latencia = (time.monotonic() - arranque) * 1000.0

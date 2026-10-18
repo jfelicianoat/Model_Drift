@@ -245,6 +245,28 @@ class ComparabilityReport(BaseModel):
         return "Comparables con reservas: " + "; ".join(self.fingerprint_notes)
 
 
+#: Lo que viaja con los pesos: al cambiar de modelo difiere por diseño. El
+#: tokenizer y la plantilla de chat son del modelo igual que su digest (en
+#: Ollama salen del propio Modelfile); dejarlos fuera bloqueaba toda comparación
+#: entre dos modelos, que es el caso de uso principal. El runtime, su versión y
+#: los parámetros aplicados NO están: esos son del instrumento y deben coincidir.
+VARIABLE_DEL_EXPERIMENTO = frozenset(
+    {
+        "model",
+        "digest",
+        "family",
+        "parameter_size",
+        "quantization",
+        "tokenizer",
+        "chat_template",
+        "context_window",
+        "remote_model",
+        "model_snapshot",
+        "system_fingerprint",
+    }
+)
+
+
 def compare_manifests(
     baseline: RunManifest,
     candidate: RunManifest,
@@ -254,11 +276,11 @@ def compare_manifests(
 ) -> ComparabilityReport:
     """Coteja dos manifiestos antes de permitir ninguna conclusión.
 
-    Los componentes de huella que **son la variable del experimento** —modelo,
-    digest y familia cuando se comparan dos modelos distintos— se excluyen del
+    Los componentes de huella que **son la variable del experimento** —los de
+    `VARIABLE_DEL_EXPERIMENTO` cuando se comparan dos modelos distintos— se excluyen del
     veredicto: van a diferir por diseño. Lo que no puede diferir es todo lo
-    demás, y en particular la plantilla de chat o el runtime: ahí es donde se
-    esconde el «mismo model_id, distinta ejecución».
+    demás: el runtime siempre y, con el mismo modelo, también la plantilla de
+    chat; ahí es donde se esconde el «mismo model_id, distinta ejecución».
     """
     issues: list[ComparabilityIssue] = []
 
@@ -300,8 +322,7 @@ def compare_manifests(
         # Comparando dos modelos distintos, su identidad es la variable: se
         # excluye. Comparando el "mismo" modelo consigo mismo, no se excluye
         # nada, que es justo cuando interesa ver si cambió por debajo.
-        variable_del_experimento = frozenset({"model", "digest", "family", "parameter_size", "quantization"})
-        ignorar = frozenset() if mismo_modelo else variable_del_experimento
+        ignorar = frozenset() if mismo_modelo else VARIABLE_DEL_EXPERIMENTO
         comparacion = compare_fingerprints(base_model.fingerprint, cand_model.fingerprint, ignore=ignorar)
         if comparacion.verdict is FingerprintVerdict.divergente:
             issues.append(

@@ -77,10 +77,10 @@ def dialogos(monkeypatch):  # type: ignore[no-untyped-def]
     from model_drift.gui import messagebox
 
     registrados: dict[str, list[str]] = {"info": [], "aviso": [], "error": [], "pregunta": []}
-    monkeypatch.setattr(messagebox, "showinfo", lambda t, m: registrados["info"].append(m))
-    monkeypatch.setattr(messagebox, "showwarning", lambda t, m: registrados["aviso"].append(m))
-    monkeypatch.setattr(messagebox, "showerror", lambda t, m: registrados["error"].append(m))
-    monkeypatch.setattr(messagebox, "askyesno", lambda t, m: registrados["pregunta"].append(m) or True)
+    monkeypatch.setattr(messagebox, "showinfo", lambda t, m, **_: registrados["info"].append(m))
+    monkeypatch.setattr(messagebox, "showwarning", lambda t, m, **_: registrados["aviso"].append(m))
+    monkeypatch.setattr(messagebox, "showerror", lambda t, m, **_: registrados["error"].append(m))
+    monkeypatch.setattr(messagebox, "askyesno", lambda t, m, **_: registrados["pregunta"].append(m) or True)
     return registrados
 
 
@@ -185,8 +185,8 @@ def test_la_ventana_arranca_con_las_tiradas_ya_cargadas(ventana) -> None:  # typ
     assert filas == set(ids)
     # La más reciente se propone como candidata y la anterior como base: es la
     # comparación que quiere hacer alguien el 95 % de las veces.
-    assert app._run_id(app.var_candidata.get()) == ids[1]
-    assert app._run_id(app.var_base.get()) == ids[0]
+    assert app._opciones_comparar[app.var_candidata.get()] == (ids[1], MODELO.key)
+    assert app._opciones_comparar[app.var_base.get()] == (ids[0], MODELO.key)
 
 
 def test_el_valor_por_defecto_de_repeticiones_es_utilizable(ventana) -> None:  # type: ignore[no-untyped-def]
@@ -250,8 +250,7 @@ def test_la_tabla_nunca_dice_regresion_sin_evidencia(ventana) -> None:  # type: 
 
 def test_comparar_una_tirada_consigo_misma_se_rechaza(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
     app, _, ids = ventana
-    app.var_base.set(ids[0])
-    app.var_candidata.set(ids[0])
+    app.var_base.set(app.var_candidata.get())
     app.comparar()
     assert dialogos["aviso"] and "consigo misma" in dialogos["aviso"][0]
 
@@ -288,7 +287,7 @@ def test_un_error_del_hilo_no_mata_la_ventana(ventana, monkeypatch) -> None:  # 
 
     app, _, _ = ventana
     errores: list[str] = []
-    monkeypatch.setattr("model_drift.gui.messagebox.showerror", lambda titulo, texto: errores.append(texto))
+    monkeypatch.setattr("model_drift.gui.messagebox.showerror", lambda titulo, texto, **_: errores.append(texto))
     app.cola.put(Mensaje("error", ("el Broker no responde", "Traceback...\nBrokerError: nope")))
     _drenar(app)
     assert errores == ["el Broker no responde"]
@@ -502,7 +501,7 @@ from model_drift.config import AppConfig
 
 raiz = sys.argv[1]
 avisos = []
-gui.messagebox.showerror = lambda titulo, texto: avisos.append(texto)
+gui.messagebox.showerror = lambda titulo, texto, **_: avisos.append(texto)
 
 
 def explota(configuracion, master=None):
@@ -638,3 +637,184 @@ def test_un_catalogo_nuevo_descarta_elecciones_que_ya_no_existen(ventana) -> Non
         [ModelCatalogEntry(provider="ollama", deployment="local", model="modelo-nuevo", dispatchable=True)]
     )
     assert app.seleccionados == set()
+
+
+# --------------------------------------------------------------------------
+# Auditoría humana del 15-oct-2026 (INC-02…INC-12)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("texto", ["-1", "0", "abc"])
+def test_inc03_inc08_repeticiones_invalidas_no_lanzan_nada(ventana, dialogos, texto) -> None:  # type: ignore[no-untyped-def]
+    app, ruta_suite, ids = ventana
+    app.seleccionados = {MODELO.key}
+    app.var_suite.set(str(ruta_suite))
+    app.var_repeticiones.set(texto)
+    app.lanzar_tirada()
+    assert dialogos["error"] and "Las repeticiones por caso deben ser un número entero" in dialogos["error"][-1]
+    assert "invalid literal" not in dialogos["error"][-1]
+    assert dialogos["pregunta"] == [], "ni siquiera se ofrece «lanzar de todas formas»"
+    assert app.hilo is None
+    assert set(app.tabla_tiradas.get_children()) == set(ids)
+
+
+def test_inc08_presupuesto_invalido_se_explica_y_admite_coma(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
+    app, _, _ = ventana
+    app.var_repeticiones.set("5")
+    app.var_presupuesto.set("abc")
+    assert app._leer_parametros() is None
+    assert "El presupuesto debe ser una cantidad en USD" in dialogos["error"][-1]
+    app.var_presupuesto.set("0,5")
+    assert app._leer_parametros() == (5, 0.5)
+    app.var_presupuesto.set("")
+    assert app._leer_parametros() == (5, None)
+
+
+def test_inc02_token_rechazado_se_ve_en_la_ventana(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
+    app, ruta_suite, _ = ventana
+    broker = FakeBroker(reject_admin_token=True)
+    broker.add_model(MODELO.key)
+    app._cliente = lambda base_url="", token="": broker.client()  # type: ignore[assignment]
+
+    app.refrescar_catalogo()  # el catálogo no pide token: sigue funcionando
+    _drenar(app)
+    app.lista_modelos.selection_set(0)
+    app._al_seleccionar_modelos()
+    app.var_suite.set(str(ruta_suite))
+    app.var_repeticiones.set("5")
+    app.lanzar_tirada()
+    _drenar(app)
+
+    registro = app.registro.get("1.0", "end")
+    assert "FALLIDA:" in registro and "ADMIN_AUTH_REQUIRED" in registro
+    assert "Determinismo observado: sí" not in registro
+    assert dialogos["aviso"] and "token" in dialogos["aviso"][-1]
+    assert app.progreso["value"] == 0, "INC-10: nada de barra llena y verde"
+
+    run_id = app.tabla_tiradas.get_children()[0]
+    assert app.tabla_tiradas.item(run_id, "values")[5] == "failed"
+    assert all(run != run_id for run, _ in app._opciones_comparar.values()), "no se ofrece para comparar"
+    app.tabla_tiradas.selection_set(run_id)
+    app._mostrar_detalle_tirada()
+    detalle = app.detalle_tirada.get("1.0", "end")
+    assert "NINGUNA invocación produjo salida" in detalle
+    assert "1 × AUTH: ADMIN_AUTH_REQUIRED" in detalle
+    assert "renueva el token" in detalle, "la nota del manifiesto también sale"
+
+
+def _tirada_en(config: AppConfig, ruta_suite: Path, modelos: list[ModelReference], **run: object) -> str:
+    broker = FakeBroker()
+    for modelo in modelos:
+        broker.add_model(modelo.key)
+        broker.respond_fixed(modelo.key, '{"a": 1}')
+    with Database(config.database) as db, broker.client() as cliente:
+        runner = Runner(cliente, load_suite(ruta_suite), db=db, config=RunConfig(repetitions=5))
+        return runner.run(modelos, **run).run_id  # type: ignore[arg-type]
+
+
+def test_inc04_inc06_los_combos_ofrecen_cada_modelo_y_nunca_tiradas_vacias(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
+    app, ruta_suite, ids = ventana
+    otro = ModelReference(provider="ollama", deployment="local", model="qwen3:8b")
+    vacia = _tirada_en(app.config_app, ruta_suite, [MODELO], should_cancel=lambda: True)
+    multi = _tirada_en(app.config_app, ruta_suite, [MODELO, otro])
+    app.refrescar_tiradas()
+
+    opciones = list(app._opciones_comparar.values())
+    assert vacia in app.tabla_tiradas.get_children(), "sigue en el histórico…"
+    assert all(run != vacia for run, _ in opciones), "…pero no se puede comparar"
+    assert (multi, MODELO.key) in opciones and (multi, otro.key) in opciones
+    assert len(opciones) == len(set(opciones)), "OB-02: sin entradas repetidas"
+
+    app.var_candidata.set(next(e for e, par in app._opciones_comparar.items() if par == (multi, otro.key)))
+    app.var_base.set(next(e for e, par in app._opciones_comparar.items() if par == (ids[0], MODELO.key)))
+    app.comparar()
+    _drenar(app)
+    assert dialogos["error"] == [], dialogos["error"]
+    assert f"Candidata: {multi} · {otro.key}" in app.resumen.get("1.0", "end")
+    assert app.ruta_informe is not None and "qwen3_8b" in app.ruta_informe.name
+
+
+def test_inc04_inc09_un_error_sin_texto_se_explica_y_libera_la_barra(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
+    app, _, _ = ventana
+    app.estado.set("Comparando…")
+    app._en_hilo(lambda: next(iter([])))
+    _drenar(app)
+    assert dialogos["error"] == ["StopIteration()"], "antes salía un diálogo en blanco"
+    assert app.estado.get().startswith("La última operación falló")
+
+
+def test_inc04_al_comparar_se_borra_el_resultado_anterior(ventana) -> None:  # type: ignore[no-untyped-def]
+    app, _, _ = ventana
+    app.comparar()
+    _drenar(app)
+    assert app.tabla_casos.get_children()
+    app._en_hilo = lambda trabajo: None  # type: ignore[method-assign]  # la nueva no llega a terminar
+    app.comparar()
+    assert not app.tabla_casos.get_children() and app.var_veredicto.get() == ""
+    assert str(app.boton_informe["state"]) == "disabled"
+
+
+def test_inc09_con_trabajo_en_curso_no_se_toca_nada(ventana, dialogos) -> None:  # type: ignore[no-untyped-def]
+    import threading
+
+    app, _, _ = ventana
+    soltar = threading.Event()
+    app.hilo = threading.Thread(target=soltar.wait, daemon=True)
+    app.hilo.start()
+    try:
+        app.cancelar.set()
+        antes = app.estado.get()
+        app.refrescar_catalogo()
+        app.probar_system1()
+        app.comparar()
+        assert app.estado.get() == antes, "no puede quedar escrito «Consultando…»"
+        assert app.cancelar.is_set(), "ni limpiarse la cancelación de la tirada en curso"
+        assert dialogos["info"] == ["Ya hay una operación en curso."] * 3
+    finally:
+        soltar.set()
+        app.hilo.join()
+
+
+def test_inc05_los_dialogos_son_hijos_de_la_ventana(ventana, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Con la raíz oculta de dueña, la ventana seguía operable y se apilaban."""
+    app, _, _ = ventana
+    padres: list[object] = []
+    monkeypatch.setattr("model_drift.gui.messagebox.showwarning", lambda t, m, **kw: padres.append(kw.get("parent")))
+    app.lanzar_tirada()  # sin modelos
+    app.var_base.set("")
+    app.comparar()  # sin tiradas elegidas
+    assert padres == [app, app]
+
+
+def test_inc11_la_tabla_de_modelos_elige_de_verdad(ventana) -> None:  # type: ignore[no-untyped-def]
+    app, _, _ = ventana
+    _catalogo_variado(app)
+    app.tabla_modelos.selection_set(["ollama/local/qwen3:8b"])
+    app._al_seleccionar_en_tabla()  # sin bucle de Tk el evento no llega solo
+    assert app.seleccionados == {"ollama/local/qwen3:8b"}
+    assert [app.lista_modelos.get(i) for i in app.lista_modelos.curselection()] == ["ollama/local/qwen3:8b"]
+
+    app.lista_modelos.selection_set(0)
+    app._al_seleccionar_modelos()
+    assert set(app.tabla_modelos.selection()) == app.seleccionados
+    assert len(app.seleccionados) == 2
+
+
+def test_inc12_el_avance_de_system1_sale_en_su_pestana(ventana) -> None:  # type: ignore[no-untyped-def]
+    from model_drift.gui import Mensaje
+
+    app, _, _ = ventana
+    app.cola.put(Mensaje("log_cal", "Caso 2/4: maestro respondió"))
+    _drenar(app)
+    assert "Caso 2/4" in app.cal_summary.get("1.0", "end")
+    assert "Caso 2/4" in app.estado.get()
+
+
+def test_inc07_la_fecha_de_las_tiradas_es_local(ventana) -> None:  # type: ignore[no-untyped-def]
+    from model_drift.cli import fecha_local
+
+    app, _, ids = ventana
+    with Database(app.config_app.database) as db:
+        fila = db.query_one("SELECT created_at FROM run WHERE run_id = ?", (ids[0],))
+    assert fila is not None
+    assert app.tabla_tiradas.item(ids[0], "values")[1] == fecha_local(fila["created_at"])

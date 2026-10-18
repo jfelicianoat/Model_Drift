@@ -220,6 +220,16 @@ class Runner(ManifiestoMixin):
             medicion.tokens.append(float(invocacion.tokens_output))
             if not invocacion.produced_output:
                 medicion.fallos += 1
+                salida.failed_invocations += 1
+                motivo = ": ".join(filter(None, (invocacion.error_code or "SIN_SALIDA", invocacion.error_message)))
+                salida.errors[motivo] = salida.errors.get(motivo, 0) + 1
+                if invocacion.auth_failed:
+                    # Con la credencial rechazada fallará todo lo que queda:
+                    # seguir solo fabricaría una tirada «terminada» vacía.
+                    salida.aborted_reason = (
+                        f"el Broker rechazó la credencial ({motivo}); renueva el token y relanza"
+                    )
+                    break
                 continue
             medicion.textos.append(invocacion.text)
 
@@ -356,6 +366,9 @@ class Runner(ManifiestoMixin):
         manifiesto.fixtures = self.resolver.used_hashes()
         if salida.aborted_reason:
             manifiesto.notes.append(f"tirada interrumpida: {salida.aborted_reason}")
+        resumen_fallos = salida.failure_summary()
+        if resumen_fallos:
+            manifiesto.notes.append(resumen_fallos)
 
     def _persist(
         self,
@@ -373,7 +386,7 @@ class Runner(ManifiestoMixin):
                 "suite_hash": self.suite.hash(),
                 "label": self.config.label,
                 "manifest_json": salida.manifest.to_json(),
-                "status": "aborted" if salida.aborted_reason else "completed",
+                "status": salida.status,
             },
         )
         self.db.insert_many("invocation", filas_invocacion)

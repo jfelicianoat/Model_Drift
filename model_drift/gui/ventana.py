@@ -95,6 +95,8 @@ class ModelDriftGUI(EjecucionMixin, ComparacionMixin, CalibrationMixin):
             self.var_progreso.set(f"{progreso.describe()} · {progreso.cost_usd:.4f} USD")
         elif mensaje.tipo == "log":
             self.log(str(mensaje.dato))
+        elif mensaje.tipo == "log_cal":
+            self._avance_calibracion(str(mensaje.dato))
         elif mensaje.tipo == "tirada_terminada":
             self._tirada_terminada(mensaje.dato)
         elif mensaje.tipo == "comparacion":
@@ -111,7 +113,9 @@ class ModelDriftGUI(EjecucionMixin, ComparacionMixin, CalibrationMixin):
         self.boton_cancelar.configure(state="disabled")
         self.log(f"ERROR: {texto}")
         self.log(traza.strip().splitlines()[-1] if traza else "")
-        messagebox.showerror("Model_Drift", texto)
+        # Sin esto la barra se quedaba en «Comparando…» para siempre.
+        self.estado.set(f"La última operación falló: {texto.splitlines()[0] if texto else '?'}")
+        messagebox.showerror("Model_Drift", texto, parent=self)
 
     # ------------------------------------------------------------------ cierre
 
@@ -121,6 +125,7 @@ class ModelDriftGUI(EjecucionMixin, ComparacionMixin, CalibrationMixin):
                 "Hay trabajo en curso",
                 "Hay una operación ejecutándose. Si cierras ahora se perderá lo que no se haya "
                 "guardado todavía.\n\n¿Cerrar de todas formas?",
+                parent=self,
             ):
                 return
             self.cancelar.set()

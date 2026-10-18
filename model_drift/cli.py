@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from model_drift.broker_client import BrokerClient
@@ -144,7 +145,7 @@ def cmd_ejecutar(args: argparse.Namespace, config: AppConfig) -> int:
             suite,
             db=Database(config.database),
             config=RunConfig(
-                repetitions=args.repeticiones or config.repetitions,
+                repetitions=args.repeticiones if args.repeticiones is not None else config.repetitions,
                 temperature=config.temperature,
                 seed=config.seed,
                 budget_usd=args.presupuesto or config.budget_usd,
@@ -162,16 +163,24 @@ def cmd_ejecutar(args: argparse.Namespace, config: AppConfig) -> int:
     print(f"  modelos      {', '.join(modelo.key for modelo in modelos)}")
     print(f"  invocaciones {salida.invocations}")
     print(f"  coste        {salida.cost_usd:.4f} USD")
-    for linea in salida.manifest.reproducibility.declare():
-        print(f"  {linea}")
+    print(f"  estado       {salida.status}")
+    resumen_fallos = salida.failure_summary()
+    if resumen_fallos:
+        print(f"  FALLOS       {resumen_fallos}")
+    if salida.status != "failed":
+        # Sobre una tirada sin ninguna salida, «determinismo observado» no
+        # describe al modelo sino la ausencia de respuestas.
+        for linea in salida.manifest.reproducibility.declare():
+            print(f"  {linea}")
     if salida.manifest.missing_guarantees:
         print("\n  Garantías NO disponibles en esta tirada:")
         for garantia in salida.manifest.missing_guarantees:
             print(f"   - {garantia}")
     if salida.aborted_reason:
         print(f"\n  INTERRUMPIDA: {salida.aborted_reason}")
-        return EXIT_ERROR
-    return EXIT_OK
+    if salida.status == "failed":
+        print("\n  NINGUNA invocación produjo salida: esta tirada no midió el modelo.", file=sys.stderr)
+    return EXIT_ERROR if salida.aborted_reason or salida.status == "failed" else EXIT_OK
 
 
 def _load_run(db: Database, run_id: str) -> tuple[RunManifest, dict[str, RunResults]]:
@@ -179,6 +188,8 @@ def _load_run(db: Database, run_id: str) -> tuple[RunManifest, dict[str, RunResu
     fila = db.query_one("SELECT * FROM run WHERE run_id = ?", (run_id,))
     if fila is None:
         raise SystemExit(f"no existe la tirada {run_id!r}")
+    if fila["status"] == "failed":
+        raise ValueError(f"la tirada {run_id} falló entera: ninguna invocación produjo salida, no midió el modelo")
     manifiesto = RunManifest.model_validate_json(fila["manifest_json"])
 
     resultados: dict[str, RunResults] = {}
@@ -214,6 +225,30 @@ def _load_run(db: Database, run_id: str) -> tuple[RunManifest, dict[str, RunResu
     return manifiesto, resultados
 
 
+def _elegir_modelo(run_id: str, resultados: dict[str, RunResults], clave: str | None) -> RunResults:
+    """Los resultados de UN modelo de la tirada. Nunca se elige uno en silencio."""
+    if not resultados:
+        raise ValueError(f"la tirada {run_id} no tiene resultados comparables: no llegó a medir ningún caso")
+    if clave is None:
+        if len(resultados) > 1:
+            raise ValueError(
+                f"la tirada {run_id} midió varios modelos ({', '.join(sorted(resultados))}): "
+                "indica cuál comparar (--modelo-base / --modelo-candidato)"
+            )
+        clave = next(iter(resultados))
+    if clave not in resultados:
+        raise ValueError(f"la tirada {run_id} no tiene resultados de {clave} (tiene: {', '.join(sorted(resultados))})")
+    return resultados[clave]
+
+
+def fecha_local(iso: str) -> str:
+    """`created_at` se guarda en UTC; a la persona se le enseña en su hora."""
+    try:
+        return datetime.fromisoformat(str(iso)).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return str(iso)[:19].replace("T", " ")
+
+
 def cmd_comparar(args: argparse.Namespace, config: AppConfig) -> int:
     politica = RegressionPolicy.from_file(args.politica) if args.politica else RegressionPolicy()
     suite = load_suite(args.suite) if args.suite else None
@@ -222,10 +257,11 @@ def cmd_comparar(args: argparse.Namespace, config: AppConfig) -> int:
         _, base = _load_run(db, args.base)
         _, candidata = _load_run(db, args.candidata)
 
-    clave_base = args.modelo_base or next(iter(base))
-    clave_cand = args.modelo_candidato or next(iter(candidata))
+    resultados_base = _elegir_modelo(args.base, base, args.modelo_base)
+    resultados_cand = _elegir_modelo(args.candidata, candidata, args.modelo_candidato)
+    clave_base, clave_cand = resultados_base.model_key, resultados_cand.model_key
     informe = compare_configured(
-        base[clave_base], candidata[clave_cand], config=config, suite=suite, policy=politica,
+        resultados_base, resultados_cand, config=config, suite=suite, policy=politica,
         client_factory=lambda: _client(config),
     )
 
@@ -238,7 +274,7 @@ def cmd_comparar(args: argparse.Namespace, config: AppConfig) -> int:
             titulo=args.titulo or "Informe de deriva",
             baseline_label=f"{args.base} · {clave_base}",
             candidate_label=f"{args.candidata} · {clave_cand}",
-            manifest=candidata[clave_cand].manifest,
+            manifest=resultados_cand.manifest,
         )
         print(f"\nInforme HTML: {destino}")
 
@@ -306,7 +342,7 @@ def cmd_tiradas(args: argparse.Namespace, config: AppConfig) -> int:
         return EXIT_OK
     for fila in filas:
         etiqueta = f" · {fila['label']}" if fila["label"] else ""
-        print(f"{fila['run_id']}  {fila['created_at'][:19]}  {fila['suite_id']}  [{fila['status']}]{etiqueta}")
+        print(f"{fila['run_id']}  {fecha_local(fila['created_at'])}  {fila['suite_id']}  [{fila['status']}]{etiqueta}")
     return EXIT_OK
 
 

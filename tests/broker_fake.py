@@ -73,6 +73,10 @@ class FakeBroker:
     #: con otro modelo y otra huella. Es el caso que rompía la lectura por
     #: «última invocación» antes del 2.10.
     shadow_probe_model: str | None = None
+    #: El token admin ya no vale (el Broker rota el suyo en cada arranque).
+    #: Forma cotejada contra el Broker 2.11 vivo el 18-oct-2026:
+    #: `403 {"detail": "ADMIN_AUTH_REQUIRED"}`. El catálogo sigue sin pedirlo.
+    reject_admin_token: bool = False
 
     requests: list[dict[str, Any]] = field(default_factory=list)
     _tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -257,6 +261,8 @@ class FakeBroker:
         )
 
     def _create_task(self, request: httpx.Request) -> httpx.Response:
+        if self.reject_admin_token:
+            return httpx.Response(403, json={"detail": "ADMIN_AUTH_REQUIRED"})
         cuerpo = json.loads(request.content.decode("utf-8"))
         self.requests.append(cuerpo)
 

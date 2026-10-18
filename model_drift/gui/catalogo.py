@@ -48,9 +48,12 @@ class CatalogoMixin(VentanaBase):
 
         self.tabla_modelos.delete(*self.tabla_modelos.get_children())
         for entrada in visibles:
+            if self.tabla_modelos.exists(entrada.key):
+                continue
             self.tabla_modelos.insert(
                 "",
                 "end",
+                iid=entrada.key,
                 values=(
                     entrada.key,
                     "sí" if entrada.dispatchable else "no",
@@ -62,12 +65,10 @@ class CatalogoMixin(VentanaBase):
             )
 
         self.lista_modelos.delete(0, "end")
-        for indice, entrada in enumerate(visibles):
+        for entrada in visibles:
             self.lista_modelos.insert("end", entrada.key)
-            if entrada.key in self.seleccionados:
-                self.lista_modelos.selection_set(indice)
 
-        self._actualizar_seleccion_visible()
+        self._sincronizar_selecciones()
         ocultos = len(self.catalogo) - len(visibles)
         self.estado.set(
             f"{len(visibles)} de {len(self.catalogo)} modelos"
@@ -81,6 +82,29 @@ class CatalogoMixin(VentanaBase):
         # Lo que está oculto por el filtro conserva su estado; de lo visible
         # manda lo que se vea marcado.
         self.seleccionados = (self.seleccionados - visibles) | elegidos
+        self._sincronizar_selecciones()
+
+    def _al_seleccionar_en_tabla(self) -> None:
+        """La tabla de «Modelos» elige igual que la lista de «Ejecutar tirada».
+
+        Antes admitía selección sin efecto: marcar filas ahí no lanzaba nada.
+        """
+        visibles = {item.key for item in self._modelos_filtrados()}
+        elegidos = set(self.tabla_modelos.selection()) & visibles
+        if (self.seleccionados & visibles) == elegidos:
+            return  # eco de nuestra propia `selection_set`
+        self.seleccionados = (self.seleccionados - visibles) | elegidos
+        self._sincronizar_selecciones()
+
+    def _sincronizar_selecciones(self) -> None:
+        """Pinta `seleccionados` en la lista y en la tabla, que muestran lo mismo."""
+        self.lista_modelos.selection_clear(0, "end")
+        for indice, clave in enumerate(self.lista_modelos.get(0, "end")):
+            if clave in self.seleccionados:
+                self.lista_modelos.selection_set(indice)
+        marcadas = [clave for clave in self.tabla_modelos.get_children() if clave in self.seleccionados]
+        if set(self.tabla_modelos.selection()) != set(marcadas):
+            self.tabla_modelos.selection_set(marcadas)
         self._actualizar_seleccion_visible()
 
     def _actualizar_seleccion_visible(self) -> None:
@@ -98,6 +122,8 @@ class CatalogoMixin(VentanaBase):
     # -------------------------------------------------------------- catálogo
 
     def refrescar_catalogo(self) -> None:
+        if self._ocupado():
+            return
         self.estado.set("Consultando el catálogo del Broker…")
 
         base_url, token = self._credenciales()

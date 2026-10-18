@@ -37,5 +37,6 @@ def escribir_texto(widget: tk.Text, texto: str, *, anexar: bool = False) -> None
     if not anexar:
         widget.delete("1.0", "end")
     widget.insert("end", texto)
-    widget.see("end")
+    # Un registro se lee por el final; un detalle o un resumen, por la cabecera.
+    widget.see("end" if anexar else "1.0")
     widget.configure(state="disabled")

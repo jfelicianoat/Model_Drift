@@ -321,7 +321,7 @@ def render_comparison(
         titulo=titulo,
         base=baseline_label,
         candidata=candidate_label,
-        fecha=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
+        fecha=datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M (UTC%z)"),
         informe=informe,
         filas=filas,
         reproducibilidad=reproducibilidad,

@@ -98,6 +98,7 @@ class VentanaBase(tk.Toplevel):
         #: Manifiestos de las tiradas listadas, por `run_id`. Los rellena la
         #: pestaña de tiradas y los consulta la de comparación.
         self._manifiestos: dict[str, dict[str, Any]] = {}
+        self._opciones_comparar: dict[str, tuple[str, str]] = {}
         self.ultimo_informe: ComparisonReport | None = None
         self.ruta_informe: Path | None = None
 
@@ -136,17 +137,29 @@ class VentanaBase(tk.Toplevel):
         configuracion.admin_token = token or configuracion.admin_token
         return BrokerClient(configuracion)
 
+    def _ocupado(self) -> bool:
+        """Avisa y devuelve `True` si ya hay trabajo en marcha.
+
+        Las acciones lo consultan ANTES de tocar estado, barra o `cancelar`: si
+        no, una consulta rechazada dejaba escrito «Consultando…» o limpiaba la
+        cancelación pedida para la tirada en curso.
+        """
+        if self.hilo is not None and self.hilo.is_alive():
+            messagebox.showinfo("Model_Drift", "Ya hay una operación en curso.", parent=self)
+            return True
+        return False
+
     def _en_hilo(self, trabajo: Callable[[], Mensaje]) -> None:
         """Lanza trabajo en segundo plano. Los widgets NO se tocan desde ahí."""
-        if self.hilo is not None and self.hilo.is_alive():
-            messagebox.showinfo("Model_Drift", "Ya hay una operación en curso.")
+        if self._ocupado():
             return
 
         def envoltorio() -> None:
             try:
                 self.cola.put(trabajo())
             except Exception as error:  # noqa: BLE001 - un fallo del hilo no puede matar la ventana
-                self.cola.put(Mensaje("error", (str(error), traceback.format_exc())))
+                # `str(StopIteration())` es "": sin el nombre, el diálogo salía vacío.
+                self.cola.put(Mensaje("error", (str(error) or repr(error), traceback.format_exc())))
 
         self.hilo = threading.Thread(target=envoltorio, daemon=True)
         self.hilo.start()
@@ -165,9 +178,10 @@ class VentanaBase(tk.Toplevel):
 
     def _elegir_ruta(self, variable: StringVar, *, carpeta: bool) -> None:
         elegida = (
-            filedialog.askdirectory(title="Elige una carpeta")
+            filedialog.askdirectory(title="Elige una carpeta", parent=self)
             if carpeta
             else filedialog.askopenfilename(
+                parent=self,
                 title="Elige un fichero",
                 filetypes=[("YAML", "*.yaml *.yml"), ("Todos", "*.*")],
             )

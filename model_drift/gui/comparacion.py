@@ -6,12 +6,13 @@ etiquetas sería peor. La ventana lo genera y lo abre en el navegador, que para
 """
 from __future__ import annotations
 
+import re
 import webbrowser
 from pathlib import Path
 from tkinter import messagebox
 
 from model_drift.cases import Suite, load_suite
-from model_drift.cli import _load_run
+from model_drift.cli import _elegir_modelo, _load_run
 from model_drift.comparison import ComparisonReport
 from model_drift.comparison.service import compare_configured
 from model_drift.db import Database
@@ -31,19 +32,25 @@ from model_drift.report import (
 class ComparacionMixin(VentanaBase):
     """Elección de las dos tiradas, contraste y volcado del resultado."""
 
-    @staticmethod
-    def _run_id(etiqueta: str) -> str:
-        return etiqueta.split(" · ")[0].strip()
-
     def comparar(self) -> None:
-        if not self.var_base.get() or not self.var_candidata.get():
-            messagebox.showwarning("Model_Drift", "Elige las dos tiradas que quieres comparar.")
+        if self._ocupado():
             return
-        base, candidata = self._run_id(self.var_base.get()), self._run_id(self.var_candidata.get())
-        if base == candidata:
+        if not self.var_base.get() or not self.var_candidata.get():
+            messagebox.showwarning("Model_Drift", "Elige las dos tiradas que quieres comparar.", parent=self)
+            return
+        elegida_base = self._opciones_comparar.get(self.var_base.get())
+        elegida_cand = self._opciones_comparar.get(self.var_candidata.get())
+        if elegida_base is None or elegida_cand is None:
+            messagebox.showwarning(
+                "Model_Drift", "La tirada elegida ya no está en la lista. Pulsa «Refrescar» en «Tiradas».", parent=self
+            )
+            return
+        (base, modelo_base), (candidata, modelo_cand) = elegida_base, elegida_cand
+        if elegida_base == elegida_cand:
             messagebox.showwarning(
                 "Model_Drift",
                 "Has elegido la misma tirada dos veces. Comparar una tirada consigo misma no mide nada.",
+                parent=self,
             )
             return
 
@@ -61,26 +68,40 @@ class ComparacionMixin(VentanaBase):
                 _, resultados_base = _load_run(db, base)
                 _, resultados_cand = _load_run(db, candidata)
             informe = compare_configured(
-                next(iter(resultados_base.values())),
-                next(iter(resultados_cand.values())),
+                _elegir_modelo(base, resultados_base, modelo_base),
+                _elegir_modelo(candidata, resultados_cand, modelo_cand),
                 suite=suite,
                 policy=politica,
                 config=self.config_app,
                 client_factory=lambda: self._cliente(broker_url, broker_token),
             )
-            return Mensaje("comparacion", (informe, base, candidata, suite is None))
+            return Mensaje(
+                "comparacion",
+                (informe, (base, modelo_base), (candidata, modelo_cand), suite is None),
+            )
 
+        # Lo de la comparación anterior se borra ya: si esta falla, no puede
+        # quedarse en pantalla como si fuera su resultado.
+        self.ultimo_informe = None
+        self.ruta_informe = None
+        self.boton_informe.configure(state="disabled")
+        self.var_veredicto.set("")
+        self._escribir(self.resumen, "")
+        self.tabla_casos.delete(*self.tabla_casos.get_children())
         self.estado.set("Comparando…")
         self._en_hilo(trabajo)
 
-    def _pintar_comparacion(self, dato: tuple[ComparisonReport, str, str, bool]) -> None:
+    def _pintar_comparacion(
+        self, dato: tuple[ComparisonReport, tuple[str, str], tuple[str, str], bool]
+    ) -> None:
         informe, base, candidata, sin_suite = dato
+        rotulo_base, rotulo_cand = " · ".join(base), " · ".join(candidata)
         self.ultimo_informe = informe
 
         veredicto = VERDICT_LABELS.get(informe.verdict.verdict, "—") if informe.verdict else "—"
         self.var_veredicto.set(veredicto)
 
-        texto = render_text_summary(informe)
+        texto = f"Base: {rotulo_base}\nCandidata: {rotulo_cand}\n\n" + render_text_summary(informe)
         if sin_suite:
             texto += (
                 "\n\nAVISO: no se pudo cargar la suite de la tirada candidata, así que ningún caso "
@@ -135,12 +156,17 @@ class ComparacionMixin(VentanaBase):
                 ),
             )
 
-    def _generar_informe(self, informe: ComparisonReport, base: str, candidata: str) -> None:
+    def _generar_informe(self, informe: ComparisonReport, base: tuple[str, str], candidata: tuple[str, str]) -> None:
         """Escribe el HTML en disco y habilita el botón que lo abre."""
-        destino = Path(self.config_app.reports_dir) / f"{base}__vs__{candidata}.html"
+        (run_base, modelo_base), (run_cand, modelo_cand) = base, candidata
+        rotulo_base, rotulo_cand = " · ".join(base), " · ".join(candidata)
+        # El modelo va en el nombre: dos tiradas de varios modelos dan una
+        # comparación por modelo, y no deben pisarse el informe.
+        modelos = "__".join(re.sub(r"[^A-Za-z0-9._-]+", "_", clave) for clave in (modelo_base, modelo_cand))
+        destino = Path(self.config_app.reports_dir) / f"{run_base}__vs__{run_cand}__{modelos}.html"
         manifiesto = None
         with Database(self.config_app.database) as db:
-            fila = db.query_one("SELECT manifest_json FROM run WHERE run_id = ?", (candidata,))
+            fila = db.query_one("SELECT manifest_json FROM run WHERE run_id = ?", (run_cand,))
         if fila is not None:
             from model_drift.manifest import RunManifest
 
@@ -148,9 +174,9 @@ class ComparacionMixin(VentanaBase):
         self.ruta_informe = write_comparison(
             informe,
             destino,
-            titulo=f"{base} → {candidata}",
-            baseline_label=base,
-            candidate_label=candidata,
+            titulo=f"{rotulo_base} → {rotulo_cand}",
+            baseline_label=rotulo_base,
+            candidate_label=rotulo_cand,
             manifest=manifiesto,
         )
         self.boton_informe.configure(state="normal")
@@ -159,6 +185,6 @@ class ComparacionMixin(VentanaBase):
     def abrir_informe(self) -> None:
         """Abre el informe HTML en el navegador. Sin servidor: `file://` basta."""
         if self.ruta_informe is None or not self.ruta_informe.is_file():
-            messagebox.showwarning("Model_Drift", "Todavía no hay ningún informe generado.")
+            messagebox.showwarning("Model_Drift", "Todavía no hay ningún informe generado.", parent=self)
             return
         webbrowser.open(self.ruta_informe.resolve().as_uri())
