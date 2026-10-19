@@ -105,7 +105,8 @@ class ManifiestoMixin(InvocacionMixin):
                     "invocaciones (seed_status != sent). La tirada NO es reproducible."
                 )
         else:
-            flags.seed_fijada = pedida
+            # Sin ninguna invocación no se fijó nada: pedirla no es haberla fijado.
+            flags.seed_fijada = pedida and estados_semilla is None
         if deterministas:
             flags.determinismo_observado = Determinism.si if all(deterministas) else Determinism.no
         if not flags.seed_fijada:

@@ -11,6 +11,7 @@ por caso, no N.
 """
 from __future__ import annotations
 
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -85,12 +86,21 @@ class Runner(ManifiestoMixin):
         hecho hasta ese punto, y el manifiesto lo declara.
         """
         run_id = f"run-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+        if self.core is not None:
+            # Antes de tocar el Broker: sin ALLOW de Core la tirada no existe
+            self.core.authorize_run(run_id, [modelo.key for modelo in models])
         # Antes de nada, qué admite este Broker: así el manifiesto nace diciendo
         # la verdad en vez de corregirse al final con el primer 422.
         self.client.probe_contract()
         manifiesto = self._build_manifest(run_id, models)
         self._sellar_contrato_broker(manifiesto)
         salida = RunOutput(run_id=run_id, manifest=manifiesto)
+        if self.core is not None:
+            self._aviso_core(salida, self.core.record_receipt(run_id, "accepted", {"suite_id": self.suite.id}))
+            # Monitor de Core: una tirada es un salto Model_Drift -> Broker (no uno por caso: serían cientos)
+            self.core.hop(run_id, "request", f"tirada de la suite {self.suite.id}", {
+                "suite_id": self.suite.id, "models": [modelo.key for modelo in models]})
+        self._inicio_tirada = time.monotonic()
         acumulado = _Acumulado()
         group = f"model-drift-{run_id}"
 
@@ -111,7 +121,27 @@ class Runner(ManifiestoMixin):
         self._cerrar_manifiesto(manifiesto, salida, acumulado)
         if self.db is not None:
             self._persist(salida, acumulado.filas_invocacion, acumulado.filas_caso)
+        if self.core is not None:
+            self._cerrar_en_core(salida, models)
         return salida
+
+    def _cerrar_en_core(self, salida: RunOutput, models: list[ModelReference]) -> None:
+        estado = {"completed": "succeeded", "failed": "failed_terminal"}.get(salida.status, "cancelled")
+        assert self.core is not None
+        self.core.hop(
+            salida.run_id, "response" if salida.status == "completed" else "error", f"tirada {salida.status}",
+            {"status": salida.status, "invocations": salida.invocations,
+             "latency_ms": int((time.monotonic() - self._inicio_tirada) * 1000)})
+        self._aviso_core(salida, self.core.record_receipt(
+            salida.run_id, estado, {"suite_id": self.suite.id, "invocations": salida.invocations}))
+        if self.db is not None and salida.status != "failed":
+            salida.core_notices += self.core.publish_certifications(
+                self.db, self.suite.id, [modelo.key for modelo in models])
+
+    @staticmethod
+    def _aviso_core(salida: RunOutput, aviso: str | None) -> None:
+        if aviso:
+            salida.core_notices.append(aviso)
 
     # ----------------------------------------------------------------- niveles
 

@@ -170,6 +170,10 @@ Cada tirada guarda un manifiesto con versiones y hashes de todo: suite, fixtures
 
 Un umbral de similitud sin procedencia de calibración es rechazado al cargar la suite, no a las tres horas de tirada.
 
+**Comparar dos modelos distintos** (p. ej. `qwen3.6:35b` frente a `qwen3.8:27b`): lo que viaja con los pesos —modelo, digest, familia, tamaño, cuantización, tokenizer, plantilla de chat, ventana de contexto y la identidad remota— es la variable del experimento y no cuenta para la comparabilidad. Lo que sí tiene que coincidir es el instrumento: runtime, su versión, parámetros pedidos y aplicados, suite, política e instrumentos de evaluación. Con el **mismo** modelo no se excluye nada: un tokenizer o una plantilla distintos son justo el «mismo `model_id`, distinta ejecución» que se busca. Una tirada de varios modelos se compara modelo a modelo: la ventana ofrece una entrada por modelo y la CLI exige `--modelo-base`/`--modelo-candidato`.
+
+**Tiradas que no midieron nada.** El catálogo del Broker (`/capabilities`, `/models/availability`) responde sin token, así que «Consultar catálogo» funciona aunque el token haya caducado; solo las tareas lo exigen. Si el Broker rechaza la credencial, la tirada se para en la primera invocación y queda `failed` con el motivo (`AUTH: ADMIN_AUTH_REQUIRED`); si ninguna invocación produce salida por cualquier otro motivo, también es `failed`. En los dos casos la CLI sale con código 1, la ventana avisa y esa tirada no se ofrece para comparar.
+
 ### 5. Nunca se afirma una garantía que no se tiene
 
 Fijar una semilla es una condición de control, no una garantía de determinismo. Por eso hay cuatro banderas independientes, no una:
@@ -210,6 +214,28 @@ estadística, política, juez e informes. La fase 5 (evaluación agéntica compl
 El cliente 2.9 ya consume semilla, telemetría, identidad tipada y exclusión del aprendizaje
 cuando el despliegue las anuncia. La ausencia de una garantía sigue registrándose como
 ausencia; implementar el campo no demuestra por sí solo determinismo o identidad remota.
+
+## AI OS Core como director (0.4.0)
+
+Opcional: sin `core_url` la app funciona igual que antes. Con `core_url` en `model_drift.yaml`
+(o `MODEL_DRIFT_CORE_URL`) y el token por app en `MODEL_DRIFT_CORE_TOKEN` (nunca en disco):
+
+- cada tirada evalúa antes la política `model_drift:broker` y solo arranca con un ALLOW
+  ejecutable; con DENY, aprobación pendiente, INDETERMINATE o Core caído **no se envía nada**;
+- deja en Core el recibo de la tirada (`accepted` → `succeeded`/`failed_terminal`/`cancelled`);
+- publica el veredicto de cada modelo sobre la suite como certificación
+  (`model_id` = `proveedor/despliegue/modelo`, `capability_id` = `suite:<id>`, revisión = nº de
+  tiradas): media de pass_rate ≥ 0,8 con ≥ 3 casos aplicables → `CERTIFIED`; < 0,5 → `REJECTED`;
+  si no, `INDETERMINATE`. Con estas certificaciones Core decide qué modelos usan las demás apps.
+
+Lo que Core no llega a apuntar (un recibo, una certificación) sale como AVISO y no invalida la tirada.
+Recorrido real: `scripts/verify_ai_os_core.py <core> <token_model_drift> <token_director> <carpeta>`
+(12 comprobaciones, verde el 18-oct-2026 contra el Broker real con `ollama/local/lfm2:24b`).
+
+**0.4.1 — monitor de Core.** Cada tirada aparece en `<core>/monitor`: la autorización y los recibos
+llevan `flow_id` = id de la tirada, y la tirada informa de un salto Model_Drift → Broker al empezar
+y otro al terminar (respuesta o error, con invocaciones y duración). Uno por tirada, no por caso,
+para no inundar el monitor. Si el monitor no contesta, la tirada no se entera.
 
 ## Desarrollo
 

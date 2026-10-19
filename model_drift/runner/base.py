@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from model_drift.ai_os_core import CoreClient
 from model_drift.broker_client import BrokerClient
 from model_drift.broker_contracts import ModelReference
 from model_drift.cases import Case, Suite
@@ -32,6 +33,7 @@ class RunnerBase:
         policy: RegressionPolicy | None = None,
         relations: dict[str, MetamorphicRelation] | None = None,
         embedder: Embedder | None = None,
+        core: CoreClient | None = None,
     ) -> None:
         self.client = client
         self.suite = suite
@@ -40,6 +42,10 @@ class RunnerBase:
         self.policy = policy or RegressionPolicy()
         self.relations = relations or {}
         self.embedder = embedder
+        #: AI OS Core, si se configuró: autoriza la tirada y recibe recibos y certificaciones.
+        self.core = core
+        #: Cuándo arrancó la tirada en curso (monitor de Core: latencia del salto al Broker).
+        self._inicio_tirada = 0.0
         self.resolver = FixtureResolver(Path(suite.root or "."))
         self.services = EvaluationServices(
             resolver=self.resolver,

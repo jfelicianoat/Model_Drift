@@ -142,6 +142,7 @@ class EjecucionMixin(CatalogoMixin, TiradasMixin):
                     ),
                     policy=politica,
                     relations=relaciones,
+                    core=self.config_app.core_client(),
                 )
                 salida = runner.run(
                     modelos,
@@ -171,6 +172,8 @@ class EjecucionMixin(CatalogoMixin, TiradasMixin):
         resumen_fallos = salida.failure_summary()
         if resumen_fallos:
             self.log(f"  FALLOS: {resumen_fallos}")
+        for aviso in salida.core_notices:
+            self.log(f"  AVISO: {aviso}")
         if salida.invocations == 0:
             self.log("  No se hizo ninguna invocación: esta tirada no midió nada.")
         if not fallida:

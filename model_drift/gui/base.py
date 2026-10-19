@@ -17,6 +17,7 @@ crear su tabla.
 """
 from __future__ import annotations
 
+import json
 import queue
 import threading
 import tkinter as tk
@@ -93,6 +94,9 @@ class VentanaBase(tk.Toplevel):
         #: visible del Listbox: si un filtro esconde un modelo ya elegido, la
         #: elección NO se pierde en silencio.
         self.seleccionados: set[str] = set()
+        #: La elección de la sesión anterior. Se aplica al primer catálogo, y
+        #: solo con los modelos que ese catálogo traiga.
+        self._seleccion_guardada: set[str] = self._leer_seleccion_guardada()
         self._combos_proveedor: list[ttk.Combobox] = []
         self._combos_despliegue: list[ttk.Combobox] = []
         #: Manifiestos de las tiradas listadas, por `run_id`. Los rellena la
@@ -118,8 +122,37 @@ class VentanaBase(tk.Toplevel):
         escribir_texto(widget, texto, anexar=anexar)
 
     def log(self, texto: str) -> None:
-        marca = datetime.now().strftime("%H:%M:%S")
-        self._escribir(self.registro, f"[{marca}] {texto}\n", anexar=True)
+        ahora = datetime.now()
+        self._escribir(self.registro, f"[{ahora:%H:%M:%S}] {texto}\n", anexar=True)
+        # El registro de la ventana muere al cerrarla; este fichero no. Sirve
+        # para diagnosticar después, sin abrir SQLite, una tirada que falló.
+        try:
+            with self._ruta_registro.open("a", encoding="utf-8") as fichero:
+                fichero.write(f"[{ahora:%Y-%m-%d %H:%M:%S}] {texto}\n")
+        except OSError:
+            pass  # un disco lleno no puede tumbar la ventana
+
+    @property
+    def _ruta_registro(self) -> Path:
+        return Path(self.config_app.database).parent / "model_drift.log"
+
+    @property
+    def _ruta_seleccion(self) -> Path:
+        return Path(self.config_app.database).parent / "gui_seleccion.json"
+
+    def _leer_seleccion_guardada(self) -> set[str]:
+        try:
+            datos = json.loads(self._ruta_seleccion.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return set()
+        return {clave for clave in datos if isinstance(clave, str)} if isinstance(datos, list) else set()
+
+    def _guardar_seleccion(self) -> None:
+        try:
+            self._ruta_seleccion.parent.mkdir(parents=True, exist_ok=True)
+            self._ruta_seleccion.write_text(json.dumps(sorted(self.seleccionados)), encoding="utf-8")
+        except OSError:
+            pass
 
     def _credenciales(self) -> tuple[str, str]:
         """Lee los widgets del Broker. **Solo desde el hilo principal.**"""

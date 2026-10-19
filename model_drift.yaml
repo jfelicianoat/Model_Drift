@@ -44,3 +44,8 @@ system1:
 # Para ejecutar el juez profundo existente, configurar judge_model con la
 # referencia completa proveedor/despliegue/modelo. Sin él, la revisión queda
 # pendiente y aparece así en el informe.
+
+# AI OS Core, el director del ecosistema (opcional). Con URL, cada tirada pide
+# permiso a Core y le publica recibos y certificaciones; si Core no contesta,
+# la tirada no arranca. Token por app solo en MODEL_DRIFT_CORE_TOKEN.
+# core_url: http://127.0.0.1:8000

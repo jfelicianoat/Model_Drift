@@ -51,6 +51,7 @@ def construir(app: ModelDriftGUI) -> ttk.Frame:
     for columna, titulo, ancho in COLUMNAS:
         app.tabla_modelos.heading(columna, text=titulo)
         app.tabla_modelos.column(columna, width=ancho, anchor="w")
+    app.tabla_modelos.tag_configure("vacia", foreground="#6b7280")
     app.tabla_modelos.pack(fill="both", expand=True, padx=8, pady=4)
     app.tabla_modelos.bind("<<TreeviewSelect>>", lambda _: app._al_seleccionar_en_tabla())
     ttk.Label(marco, textvariable=app.var_seleccion).pack(anchor="w", padx=8, pady=(0, 4))

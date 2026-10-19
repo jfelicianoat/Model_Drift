@@ -818,3 +818,47 @@ def test_inc07_la_fecha_de_las_tiradas_es_local(ventana) -> None:  # type: ignor
         fila = db.query_one("SELECT created_at FROM run WHERE run_id = ?", (ids[0],))
     assert fila is not None
     assert app.tabla_tiradas.item(ids[0], "values")[1] == fecha_local(fila["created_at"])
+
+
+def test_p3_16_la_tabla_y_la_lista_dicen_por_que_estan_vacias(ventana) -> None:  # type: ignore[no-untyped-def]
+    from model_drift.gui.catalogo import FILA_VACIA, VACIO_FILTRO, VACIO_SIN_CATALOGO
+
+    app, _, _ = ventana
+    assert app.tabla_modelos.get_children() == (FILA_VACIA,)
+    assert app.lista_modelos.get(0) == VACIO_SIN_CATALOGO
+    # Marcar el aviso no elige nada.
+    app.lista_modelos.selection_set(0)
+    app._al_seleccionar_modelos()
+    app.tabla_modelos.selection_set([FILA_VACIA])
+    app._al_seleccionar_en_tabla()
+    assert app.seleccionados == set()
+
+    _catalogo_variado(app)
+    app.filtro_texto.set("no-existe")
+    app._aplicar_filtros()
+    assert app.lista_modelos.get(0) == VACIO_FILTRO and app.lista_modelos.size() == 1
+    app.filtro_texto.set("")
+    app._aplicar_filtros()
+    assert FILA_VACIA not in app.tabla_modelos.get_children()
+
+
+def test_ob03_la_eleccion_y_el_registro_sobreviven_al_cierre(ventana, raiz) -> None:  # type: ignore[no-untyped-def]
+    from model_drift.gui import ModelDriftGUI
+
+    app, _, _ = ventana
+    _catalogo_variado(app)
+    app.lista_modelos.selection_set(0, 1)
+    app._al_seleccionar_modelos()
+    elegidos = set(app.seleccionados)
+    app.log("una línea que tiene que quedar en disco")
+
+    otra = ModelDriftGUI(app.config_app, master=raiz)
+    otra.withdraw()
+    try:
+        assert otra.seleccionados == set(), "sin catálogo no se da por elegido nada"
+        _catalogo_variado(otra)
+        assert otra.seleccionados == elegidos
+        registro = (Path(app.config_app.database).parent / "model_drift.log").read_text(encoding="utf-8")
+        assert "una línea que tiene que quedar en disco" in registro
+    finally:
+        otra.cerrar()

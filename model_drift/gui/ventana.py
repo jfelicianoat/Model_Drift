@@ -43,6 +43,7 @@ class ModelDriftGUI(EjecucionMixin, ComparacionMixin, CalibrationMixin):
         # contra un intérprete Tcl ya muerto.
         self._id_bombeo: str | None = self.after(120, self._bombear_cola)
         self.protocol("WM_DELETE_WINDOW", self._al_cerrar)
+        self._aplicar_filtros()  # pinta el aviso de «sin catálogo» dentro de la tabla
         self.refrescar_tiradas()
 
     # ------------------------------------------------------------- construcción

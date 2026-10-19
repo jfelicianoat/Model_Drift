@@ -246,3 +246,13 @@ def test_inc07_las_fechas_se_enseñan_en_hora_local() -> None:
     esperado = datetime(2026, 10, 15, 12, 44, 28, tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S")
     assert cli.fecha_local("2026-10-15T12:44:28.581090+00:00") == esperado
     assert cli.fecha_local("no-es-fecha") == "no-es-fecha"
+
+
+def test_cli_presupuesto_cero_es_un_tope_no_un_olvido(cli_entorno, capsys) -> None:  # type: ignore[no-untyped-def]
+    """`--presupuesto 0` se ignoraba (`0 or config`), igual que `--repeticiones 0`."""
+    ruta_config, ruta_suite, _ = cli_entorno
+    assert _ejecutar(ruta_config, ruta_suite, "--modelo", VIEJO.key, "--presupuesto", "0") == cli.EXIT_ERROR
+    salida = capsys.readouterr().out
+    assert "presupuesto agotado" in salida and "invocaciones 0" in salida
+    # Hallado en la prueba en vivo: sin invocaciones decía «Semilla fijada: sí».
+    assert "Semilla fijada: no" in salida

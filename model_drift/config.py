@@ -14,6 +14,9 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
+from model_drift.ai_os_core import ENV_TOKEN as CORE_ENV_TOKEN
+from model_drift.ai_os_core import ENV_URL as CORE_ENV_URL
+from model_drift.ai_os_core import CoreClient
 from model_drift.broker_client import BrokerConfig
 from model_drift.broker_contracts import ModelReference
 from model_drift.system1_contracts import System1Config
@@ -29,6 +32,9 @@ class AppConfig(BaseModel):
     #: El Broker de trabajo vive en otra máquina de la LAN, no en loopback.
     #: Se cambia aquí, en model_drift.yaml, o con MODEL_DRIFT_BROKER_URL.
     broker_url: str = "http://192.168.1.52:8765"
+    #: AI OS Core, el director del ecosistema. Vacío: la app funciona sin él.
+    #: También MODEL_DRIFT_CORE_URL; el token solo por MODEL_DRIFT_CORE_TOKEN.
+    core_url: str | None = None
     database: str = "state/model_drift.sqlite"
     reports_dir: str = "informes"
     suites_dir: str = "suites"
@@ -65,6 +71,10 @@ class AppConfig(BaseModel):
             admin_token=self.broker_token,
             poll_interval_seconds=self.poll_interval_seconds,
         )
+
+    def core_client(self) -> CoreClient | None:
+        url = os.environ.get(CORE_ENV_URL) or self.core_url
+        return CoreClient(url, os.environ.get(CORE_ENV_TOKEN) or None) if url else None
 
     def model_reference(self, raw: str) -> ModelReference:
         """Convierte `proveedor/despliegue/modelo` en una referencia.

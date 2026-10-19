@@ -148,13 +148,14 @@ def cmd_ejecutar(args: argparse.Namespace, config: AppConfig) -> int:
                 repetitions=args.repeticiones if args.repeticiones is not None else config.repetitions,
                 temperature=config.temperature,
                 seed=config.seed,
-                budget_usd=args.presupuesto or config.budget_usd,
+                budget_usd=args.presupuesto if args.presupuesto is not None else config.budget_usd,
                 label=args.etiqueta or "",
                 allow_code_execution=config.allow_code_execution,
                 timeout_seconds=config.timeout_seconds,
             ),
             policy=politica,
             relations=relaciones,
+            core=config.core_client(),
         )
         salida = runner.run(modelos)
 
@@ -176,6 +177,8 @@ def cmd_ejecutar(args: argparse.Namespace, config: AppConfig) -> int:
         print("\n  Garantías NO disponibles en esta tirada:")
         for garantia in salida.manifest.missing_guarantees:
             print(f"   - {garantia}")
+    for aviso in salida.core_notices:
+        print(f"  AVISO        {aviso}")
     if salida.aborted_reason:
         print(f"\n  INTERRUMPIDA: {salida.aborted_reason}")
     if salida.status == "failed":

@@ -86,6 +86,8 @@ class RunOutput:
     #: «código: mensaje» -> veces. Sin esto un token caducado se veía como éxito.
     failed_invocations: int = 0
     errors: dict[str, int] = field(default_factory=dict)
+    #: Lo que AI OS Core no llegó a apuntar (recibos, certificaciones). No invalida la tirada.
+    core_notices: list[str] = field(default_factory=list)
 
     @property
     def status(self) -> str:

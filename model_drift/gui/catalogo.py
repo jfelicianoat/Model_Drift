@@ -14,6 +14,10 @@ from model_drift.db import Database
 from model_drift.gui.base import VentanaBase
 from model_drift.gui.comunes import REMOTOS, Mensaje, _tri
 
+FILA_VACIA = "__sin_modelos__"
+VACIO_SIN_CATALOGO = "(sin catálogo: pulsa «Consultar catálogo»)"  # cabe en la columna de 300 px
+VACIO_FILTRO = "(ningún modelo pasa los filtros actuales)"
+
 
 class CatalogoMixin(VentanaBase):
     """Consulta del catálogo, filtros compartidos y conjunto de elegidos."""
@@ -67,6 +71,14 @@ class CatalogoMixin(VentanaBase):
         self.lista_modelos.delete(0, "end")
         for entrada in visibles:
             self.lista_modelos.insert("end", entrada.key)
+        if not visibles:
+            # Dentro de la propia tabla: el contador de la barra se pasa por alto.
+            aviso = VACIO_SIN_CATALOGO if not self.catalogo else VACIO_FILTRO
+            self.tabla_modelos.insert("", "end", iid=FILA_VACIA, values=(aviso, "", "", "", "", ""), tags=("vacia",))
+            self.lista_modelos.insert("end", aviso)
+            self.lista_modelos.itemconfigure(
+                0, foreground="#6b7280", selectforeground="#6b7280", selectbackground="white"
+            )
 
         self._sincronizar_selecciones()
         ocultos = len(self.catalogo) - len(visibles)
@@ -78,7 +90,8 @@ class CatalogoMixin(VentanaBase):
     def _al_seleccionar_modelos(self) -> None:
         """Sincroniza la selección visible con el conjunto persistente."""
         visibles = {item.key for item in self._modelos_filtrados()}
-        elegidos = {self.lista_modelos.get(indice) for indice in self.lista_modelos.curselection()}
+        # `& visibles` deja fuera la fila de aviso cuando no hay ningún modelo.
+        elegidos = {self.lista_modelos.get(indice) for indice in self.lista_modelos.curselection()} & visibles
         # Lo que está oculto por el filtro conserva su estado; de lo visible
         # manda lo que se vea marcado.
         self.seleccionados = (self.seleccionados - visibles) | elegidos
@@ -118,6 +131,8 @@ class CatalogoMixin(VentanaBase):
             # la elección, o peor, se lanzaría con modelos que ya no se ven.
             texto += f" ({ocultos} fuera del filtro actual)"
         self.var_seleccion.set(texto)
+        if self.catalogo:  # sin catálogo aún, no se pisa lo guardado de la sesión anterior
+            self._guardar_seleccion()
 
     # -------------------------------------------------------------- catálogo
 
@@ -158,7 +173,8 @@ class CatalogoMixin(VentanaBase):
         for combo in self._combos_despliegue:
             combo["values"] = despliegues
         # Una elección anterior que ya no exista en el catálogo nuevo se cae.
-        self.seleccionados &= {item.key for item in entradas}
+        self.seleccionados = (self.seleccionados | self._seleccion_guardada) & {item.key for item in entradas}
+        self._seleccion_guardada = set()
         self._aplicar_filtros()
 
     # ------------------------------------------------------------- selección
