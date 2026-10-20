@@ -104,8 +104,10 @@ class CoreClient:
     def close(self) -> None:
         self._http.close()
 
-    def authorize_run(self, run_id: str, model_keys: list[str]) -> None:
-        """Pide permiso para la tirada; si no hay ALLOW ejecutable, lanza y no se envía nada."""
+    def authorize_run(self, run_id: str, model_keys: list[str]) -> int | None:
+        """Pide permiso para la tirada; si no hay ALLOW ejecutable, lanza y no se envía nada.
+
+        Devuelve el turno en la cola del Broker que el director fijó en el monitor (o None)."""
         decision = self._post("/api/v1/policies/evaluate", {
             "scope": POLICY_SCOPE, "principal_id": PRINCIPAL, "resource_id": run_id,
             # Las suites son prompts de prueba del propio operador
@@ -114,6 +116,8 @@ class CoreClient:
         })
         if decision.get("authorization") != "ALLOW" or decision.get("executable") is not True:
             raise CoreDeniedError(_denied_text(decision))
+        priority = decision.get("broker_priority")
+        return priority if isinstance(priority, int) else None
 
     def record_receipt(self, run_id: str, status: str, evidence: dict[str, Any]) -> str | None:
         """Devuelve un aviso si Core no lo apuntó; la tirada no se cae por un recibo."""

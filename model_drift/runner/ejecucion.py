@@ -88,7 +88,7 @@ class Runner(ManifiestoMixin):
         run_id = f"run-{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
         if self.core is not None:
             # Antes de tocar el Broker: sin ALLOW de Core la tirada no existe
-            self.core.authorize_run(run_id, [modelo.key for modelo in models])
+            self.client.priority = self.core.authorize_run(run_id, [modelo.key for modelo in models])
         # Antes de nada, qué admite este Broker: así el manifiesto nace diciendo
         # la verdad en vez de corregirse al final con el primer 422.
         self.client.probe_contract()

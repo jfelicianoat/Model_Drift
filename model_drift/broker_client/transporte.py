@@ -48,6 +48,8 @@ class TransporteBroker:
         self._owns_client = client is None
         #: Garantías que no se pudieron obtener. Va tal cual al manifiesto.
         self.missing_guarantees: list[str] = []
+        #: Turno en la cola del Broker que AI OS Core fija a la app (§5.1.1). None = el suyo (100).
+        self.priority: int | None = None
         self._catalog_cache: list[ModelCatalogEntry] | None = None
         self._features_cache: dict[str, dict[str, Any]] = {}
         #: Se rellenan al sondear el contrato (`probe_contract`).

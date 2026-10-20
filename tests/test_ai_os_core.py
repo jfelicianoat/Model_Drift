@@ -33,8 +33,9 @@ SUITE = {
 
 class FakeCore:
     def __init__(self, authorization: str = "ALLOW", *, receipts_fail: bool = False,
-                 hops_fail: bool = False) -> None:
+                 hops_fail: bool = False, broker_priority: int | None = None) -> None:
         self.authorization = authorization
+        self.broker_priority = broker_priority
         self.receipts_fail = receipts_fail
         self.hops_fail = hops_fail
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -46,7 +47,8 @@ class FakeCore:
         if request.url.path == "/api/v1/policies/evaluate":
             return httpx.Response(200, json={"authorization": self.authorization,
                                              "executable": self.authorization == "ALLOW",
-                                             "unknown_inputs": [], "trace_id": "trace_x"})
+                                             "unknown_inputs": [], "trace_id": "trace_x",
+                                             "broker_priority": self.broker_priority})
         if request.url.path == "/api/v1/operations/receipts":
             return httpx.Response(503 if self.receipts_fail else 201, json={})
         if request.url.path == "/api/v1/flows/hops" and self.hops_fail:
@@ -107,6 +109,15 @@ def test_con_allow_deja_recibos_y_certifica(tmp_path: Path) -> None:
                         "source_system": "model_drift", "evaluation_verdict": "CERTIFIED",
                         "is_applicable": True, "revision": 1}
         assert salida.core_notices == []
+
+
+def test_el_turno_del_monitor_de_core_va_en_cada_peticion_al_broker(tmp_path: Path) -> None:
+    _, broker, _ = _tirada(tmp_path, FakeCore(broker_priority=500).client())
+    assert broker.requests and {r.get("priority") for r in broker.requests} == {500}
+    # Sin turno fijado en Core no se manda: el Broker usa su 100
+    (tmp_path / "otra").mkdir()
+    _, broker, _ = _tirada(tmp_path / "otra", FakeCore().client())
+    assert all("priority" not in r for r in broker.requests)
 
 
 def test_la_tirada_se_ve_en_el_monitor_de_core(tmp_path: Path) -> None:

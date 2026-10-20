@@ -73,6 +73,8 @@ class InvocacionMixin(HuellaMixin):
             "execution": {"strategy": "single", "preset": "fast"},
             "group": group,
         }
+        if self.priority is not None:
+            cuerpo["priority"] = self.priority
         if system:
             # El Broker no escribe system prompt en `single` (es transparente por
             # contrato), así que el rol se antepone al propio prompt para que
