@@ -12,5 +12,6 @@ graphify-out/
 .ruff_cache/
 .coverage
 htmlcov/
+*.bak
 state/
 informes/

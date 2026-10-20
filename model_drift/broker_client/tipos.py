@@ -6,6 +6,7 @@ una sola línea de HTTP.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -25,8 +26,11 @@ ORIGIN = "model_drift"
 
 @dataclass
 class BrokerConfig:
-    base_url: str = "http://192.168.1.52:8765"
+    base_url: str = "https://192.168.1.52:8765"
     admin_token: str | None = None
+    #: Quien da el token en cada petición (AI OS Core); `True` = pedirlo de nuevo tras un 401/403.
+    #: Manda sobre `admin_token`.
+    token_source: Callable[[bool], str | None] | None = None
     timeout_seconds: float = 30.0
     poll_interval_seconds: float = 2.0
     max_wait_seconds: float = 900.0

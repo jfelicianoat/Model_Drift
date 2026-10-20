@@ -7,6 +7,8 @@ cual al manifiesto: una tirada dice lo que no pudo garantizar.
 """
 from __future__ import annotations
 
+import os
+import ssl
 from typing import Any, Self
 
 import httpx
@@ -18,6 +20,21 @@ from model_drift.broker_contracts import (
 )
 
 
+#: CA que firma el certificado HTTPS del Broker (la «AI Broker CA»). Solo se usa para el Broker:
+#: un `SSL_CERT_FILE` global rompería el HTTPS de internet.
+ENV_CA_CERT = "AI_BROKER_CA_CERT"
+DEFAULT_CA_CERT = r"C:\Agora\pki-broker\ca.crt"
+
+
+def broker_ssl_context() -> ssl.SSLContext:
+    """Confianza del sistema más la CA del Broker, si está en el equipo."""
+    context = ssl.create_default_context()
+    ca = os.environ.get(ENV_CA_CERT) or DEFAULT_CA_CERT
+    if os.environ.get(ENV_CA_CERT) or os.path.isfile(ca):
+        context.load_verify_locations(cafile=ca)
+    return context
+
+
 class TransporteBroker:
     """Sesión HTTP contra el Broker y traducción de sus errores."""
 
@@ -26,6 +43,7 @@ class TransporteBroker:
         self._client = client or httpx.Client(
             base_url=self.config.base_url.rstrip("/"),
             timeout=self.config.timeout_seconds,
+            verify=broker_ssl_context(),
         )
         self._owns_client = client is None
         #: Garantías que no se pudieron obtener. Va tal cual al manifiesto.
@@ -67,10 +85,10 @@ class TransporteBroker:
     def __exit__(self, *_: object) -> None:
         self.close()
 
-    def _headers(self) -> dict[str, str]:
-        if self.config.admin_token:
-            return {"X-Admin-Token": self.config.admin_token}
-        return {}
+    def _headers(self, refresh: bool = False) -> dict[str, str]:
+        source = self.config.token_source
+        token = source(refresh) if source is not None else self.config.admin_token
+        return {"X-Admin-Token": token} if token else {}
 
     def _declare_missing(self, guarantee: str) -> None:
         if guarantee not in self.missing_guarantees:
@@ -79,6 +97,9 @@ class TransporteBroker:
     def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         try:
             response = self._client.request(method, url, headers=self._headers(), **kwargs)
+            if response.status_code in (401, 403) and self.config.token_source is not None:
+                # El Broker se reinició y rotó su token: se pide el nuevo a Core y se reintenta una vez
+                response = self._client.request(method, url, headers=self._headers(refresh=True), **kwargs)
         except httpx.TimeoutException as error:
             raise BrokerError("se agotó el plazo de la petición al Broker", code="TIMEOUT") from error
         except httpx.HTTPError as error:

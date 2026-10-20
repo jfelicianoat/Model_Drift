@@ -152,3 +152,58 @@ def test_sin_core_url_no_hay_director(monkeypatch: pytest.MonkeyPatch) -> None:
     assert AppConfig().core_client() is None
     monkeypatch.setenv("MODEL_DRIFT_CORE_URL", "http://127.0.0.1:8000")
     assert AppConfig().core_client() is not None
+
+
+def test_sin_pegar_tokens_core_da_su_conexion_y_el_token_del_broker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Core deja URL y token de la app; el del Broker se pide a Core y se renueva tras un 403."""
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from model_drift.broker_client import BrokerClient
+    from model_drift.config import AppConfig
+
+    broker_vigente = ["broker-1"]
+
+    class FalsoCore(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            ok = self.headers.get("Authorization") == "Bearer tok-md"
+            cuerpo = json.dumps({"token": broker_vigente[0]} if ok else {}).encode()
+            self.send_response(200 if ok else 401)
+            self.end_headers()
+            self.wfile.write(cuerpo)
+
+        def log_message(self, *_: object) -> None:
+            pass
+
+    servidor = HTTPServer(("127.0.0.1", 0), FalsoCore)
+    threading.Thread(target=servidor.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{servidor.server_port}"
+        monkeypatch.setenv("AI_OS_CONNECT_DIR", str(tmp_path))
+        monkeypatch.delenv("MODEL_DRIFT_CORE_URL", raising=False)
+        monkeypatch.delenv("MODEL_DRIFT_CORE_TOKEN", raising=False)
+        monkeypatch.setenv("MODEL_DRIFT_BROKER_TOKEN", "caducado-pegado")
+        (tmp_path / "model_drift.json").write_text(json.dumps({"core_url": url, "token": "tok-md"}))
+
+        config = AppConfig()
+        assert config.core_settings() == (url, "tok-md")
+
+        vistos: list[str | None] = []
+
+        def broker(request: httpx.Request) -> httpx.Response:
+            vistos.append(request.headers.get("X-Admin-Token"))
+            if request.headers.get("X-Admin-Token") != broker_vigente[0]:
+                return httpx.Response(403, json={"detail": {"code": "ADMIN_AUTH_REQUIRED", "message": "no"}})
+            return httpx.Response(200, json={})
+
+        cliente = BrokerClient(config.broker_config(),
+                               client=httpx.Client(base_url="http://broker", transport=httpx.MockTransport(broker)))
+        cliente._request("GET", "/api/v1/capabilities")
+        broker_vigente[0] = "broker-2"  # el Broker se reinicia y el runner publica el nuevo en Core
+        cliente._request("GET", "/api/v1/capabilities")
+        assert vistos == ["broker-1", "broker-1", "broker-2"]
+    finally:
+        servidor.shutdown()

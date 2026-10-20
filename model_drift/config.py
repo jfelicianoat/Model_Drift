@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from model_drift.ai_os_core import ENV_TOKEN as CORE_ENV_TOKEN
 from model_drift.ai_os_core import ENV_URL as CORE_ENV_URL
-from model_drift.ai_os_core import CoreClient
+from model_drift.ai_os_core import CoreBrokerToken, CoreClient, core_connection
 from model_drift.broker_client import BrokerConfig
 from model_drift.broker_contracts import ModelReference
 from model_drift.system1_contracts import System1Config
@@ -31,7 +31,7 @@ class AppConfig(BaseModel):
 
     #: El Broker de trabajo vive en otra máquina de la LAN, no en loopback.
     #: Se cambia aquí, en model_drift.yaml, o con MODEL_DRIFT_BROKER_URL.
-    broker_url: str = "http://192.168.1.52:8765"
+    broker_url: str = "https://192.168.1.52:8765"
     #: AI OS Core, el director del ecosistema. Vacío: la app funciona sin él.
     #: También MODEL_DRIFT_CORE_URL; el token solo por MODEL_DRIFT_CORE_TOKEN.
     core_url: str | None = None
@@ -66,15 +66,27 @@ class AppConfig(BaseModel):
         return os.environ.get(ENV_TOKEN) or None
 
     def broker_config(self) -> BrokerConfig:
+        core = self.core_settings()
         return BrokerConfig(
             base_url=os.environ.get(ENV_BASE_URL) or self.broker_url,
             admin_token=self.broker_token,
+            # Con Core, el token del Broker lo da Core (nadie lo pega); el del entorno queda de reserva
+            token_source=CoreBrokerToken(core[0], core[1], self.broker_token) if core and core[1] else None,
             poll_interval_seconds=self.poll_interval_seconds,
         )
 
-    def core_client(self) -> CoreClient | None:
+    def core_settings(self) -> tuple[str, str | None] | None:
+        """URL y token de Core: entorno o yaml y, si faltan, los que deja Core al arrancar."""
         url = os.environ.get(CORE_ENV_URL) or self.core_url
-        return CoreClient(url, os.environ.get(CORE_ENV_TOKEN) or None) if url else None
+        token = os.environ.get(CORE_ENV_TOKEN) or None
+        found = core_connection()
+        if found and (not url or url.rstrip("/") == found[0].rstrip("/")):
+            url, token = url or found[0], token or found[1]
+        return (url, token) if url else None
+
+    def core_client(self) -> CoreClient | None:
+        core = self.core_settings()
+        return CoreClient(core[0], core[1]) if core else None
 
     def model_reference(self, raw: str) -> ModelReference:
         """Convierte `proveedor/despliegue/modelo` en una referencia.

@@ -12,6 +12,10 @@ funcionar: sin `core_url` todo sigue igual. Con `core_url`:
 """
 from __future__ import annotations
 
+import json
+import os
+import urllib.request
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -31,6 +35,53 @@ CERTIFIED_FROM = 0.8
 REJECTED_BELOW = 0.5
 #: Un salto para el monitor de Core nunca debe hacer esperar a la tirada.
 HOP_TIMEOUT_SECONDS = 3.0
+
+
+def core_connection(principal: str = PRINCIPAL) -> tuple[str, str] | None:
+    """URL y token de esta app en Core, tal como Core los deja en su carpeta de conexión.
+
+    Core genera un token por app y lo escribe en %LOCALAPPDATA%/AIOSCore/conexion: así
+    no hay que pegar ninguno. Sin Core instalado (o sin haber arrancado nunca), None.
+    """
+    local = os.environ.get("LOCALAPPDATA")
+    folder = os.environ.get("AI_OS_CONNECT_DIR") or (str(Path(local, "AIOSCore", "conexion")) if local else "")
+    if not folder:
+        return None
+    try:
+        data = json.loads(Path(folder, f"{principal}.json").read_text(encoding="utf-8"))
+        url, token = str(data["core_url"]), str(data["token"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return (url, token) if url and token else None
+
+
+class CoreBrokerToken:
+    """El token del AI Broker, pedido a Core: el Broker lo rota en cada arranque.
+
+    Se llama en cada petición; `refresh=True` (tras un 401/403 del Broker) lo vuelve a
+    pedir. Si Core no lo tiene, se usa `fallback` (el token del entorno, si lo hay).
+    """
+
+    def __init__(self, core_url: str, core_token: str, fallback: str | None = None, timeout: float = 5.0) -> None:
+        self._url = core_url.rstrip("/") + "/api/v1/credentials/broker"
+        self._core_token = core_token
+        self._fallback = fallback
+        self._timeout = timeout
+        self._token: str | None = None
+
+    def __call__(self, refresh: bool = False) -> str | None:
+        if refresh or self._token is None:
+            self._token = self._fetch() or self._token
+        return self._token or self._fallback
+
+    def _fetch(self) -> str | None:
+        request = urllib.request.Request(self._url, headers={
+            "Authorization": f"Bearer {self._core_token}", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+                return json.load(response).get("token") or None
+        except (OSError, ValueError, AttributeError):
+            return None
 
 
 class CoreUnavailableError(RuntimeError):

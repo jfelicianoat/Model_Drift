@@ -36,9 +36,13 @@ def construir(app: ModelDriftGUI) -> ttk.Frame:
     ttk.Label(arriba, text="Broker:").pack(side="left")
     app.var_broker = StringVar(value=app.config_app.broker_url)
     ttk.Entry(arriba, textvariable=app.var_broker, width=32).pack(side="left", padx=6)
-    ttk.Label(arriba, text="Token:").pack(side="left")
     app.var_token = StringVar(value=app.config_app.broker_token or "")
-    ttk.Entry(arriba, textvariable=app.var_token, width=28, show="*").pack(side="left", padx=6)
+    if app.config_app.core_settings():
+        # El token del Broker lo da AI OS Core en cada petición: no hay nada que pegar
+        ttk.Label(arriba, text="Token: lo da AI OS Core").pack(side="left", padx=6)
+    else:
+        ttk.Label(arriba, text="Token:").pack(side="left")
+        ttk.Entry(arriba, textvariable=app.var_token, width=28, show="*").pack(side="left", padx=6)
     ttk.Button(arriba, text="Consultar catálogo", command=app.refrescar_catalogo).pack(side="left", padx=6)
 
     barra_filtros(app, marco).pack(fill="x", padx=8, pady=4)
