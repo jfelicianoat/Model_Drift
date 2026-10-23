@@ -19,7 +19,6 @@ from model_drift.broker_contracts import (
     ModelCatalogEntry,
 )
 
-
 #: CA que firma el certificado HTTPS del Broker (la «AI Broker CA»). Solo se usa para el Broker:
 #: un `SSL_CERT_FILE` global rompería el HTTPS de internet.
 ENV_CA_CERT = "AI_BROKER_CA_CERT"

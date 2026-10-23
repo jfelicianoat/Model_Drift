@@ -84,6 +84,10 @@ class InvocacionMixin(HuellaMixin):
             cuerpo["model_requirements"]["cloud_allowed"] = cloud_allowed
         if json_schema is not None:
             cuerpo["output"] = {"format": "json", "json_schema": json_schema}
+        elif inference_kind is InferenceKind.embedding:
+            # El contrato exige `format: json` en un embedding; sin `output` el
+            # Broker lo rechazaba con 422. Desde 2.12 ya no pide `json_schema`.
+            cuerpo["output"] = {"format": "json"}
         if timeout_seconds is not None:
             cuerpo["execution"]["timeout_seconds"] = timeout_seconds
         if self.config.supports_learning_exclusion:

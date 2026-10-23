@@ -56,7 +56,7 @@ class CatalogoMixin(TransporteBroker):
         # `seed` no tiene bandera propia: llegó en 2.9 junto a las que sí la
         # tienen, así que su presencia se infiere de la versión anunciada.
         self.config.supports_seed = bool(capacidades.get("execution_fingerprint")) or (
-            self.contract_version is not None and self.contract_version >= "2.9"
+            _version(self.contract_version) >= (2, 9)
         )
         self.config.supports_learning_exclusion = bool(capacidades.get("exclude_from_model_learning"))
         self.supports_invocation_telemetry = bool(capacidades.get("invocation_telemetry"))
@@ -227,3 +227,11 @@ class CatalogoMixin(TransporteBroker):
         if entrada is not None and not entrada.features:
             entrada.features = self.features_for(reference)
         return entrada
+
+
+def _version(value: str | None) -> tuple[int, ...]:
+    """Versión de contrato como números: como texto, «2.12» < «2.9»."""
+    try:
+        return tuple(int(part) for part in (value or "").split("."))
+    except ValueError:
+        return ()

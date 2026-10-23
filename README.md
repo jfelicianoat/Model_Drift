@@ -237,6 +237,13 @@ llevan `flow_id` = id de la tirada, y la tirada informa de un salto Model_Drift 
 y otro al terminar (respuesta o error, con invocaciones y duración). Uno por tirada, no por caso,
 para no inundar el monitor. Si el monitor no contesta, la tirada no se entera.
 
+**0.4.6 — Broker 2.12.**
+- **Semilla:** la versión del contrato se comparaba como texto, y `"2.12" >= "2.9"` da falso. Contra un Broker
+  que no anunciara `execution_fingerprint`, se apagaba la semilla y la tirada se declaraba no
+  reproducible sin motivo. Ahora se compara por números.
+- **Embeddings:** la petición de embedding no llevaba `output`, y el contrato exige `format: json`. Desde el 2.12
+  ya no hace falta `json_schema`.
+
 ## Desarrollo
 
 System 1 puede priorizar revisiones semánticas mediante el Broker, inicialmente

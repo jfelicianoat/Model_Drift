@@ -4,7 +4,7 @@ from __future__ import annotations
 import httpx
 
 from model_drift.broker_client import BrokerClient, BrokerConfig
-from model_drift.broker_contracts import BrokerError, ModelReference
+from model_drift.broker_contracts import BrokerError, InferenceKind, ModelReference
 from tests.broker_fake import FakeBroker
 
 VIEJO = ModelReference(provider="ollama", deployment="local", model="qwen3:6b")
@@ -500,3 +500,20 @@ def test_un_rol_desconocido_no_es_un_error() -> None:
     assert item.role_enum is InvocationRole.unknown
     assert item.status_enum is InvocationStatus.unknown
     assert item.is_contractual is True
+
+
+def test_contrato_2_12_se_compara_como_numero_y_no_como_texto() -> None:
+    """Como texto, «2.12» >= «2.9» es falso y la semilla se apagaba sin motivo."""
+    broker = _broker()
+    with broker.client() as cliente:
+        cliente.capabilities = lambda: {"contract_version": "2.12"}  # type: ignore[method-assign]
+        cliente.config.supports_seed = False
+        cliente.probe_contract()
+        assert cliente.config.supports_seed is True
+
+
+def test_un_embedding_declara_formato_json_que_exige_el_contrato() -> None:
+    broker = _broker()
+    with broker.client() as cliente:
+        cliente.invoke(prompt="hola", target=VIEJO, inference_kind=InferenceKind.embedding)
+    assert broker.requests[-1]["output"] == {"format": "json"}
