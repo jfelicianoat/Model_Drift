@@ -48,4 +48,4 @@ system1:
 # AI OS Core, el director del ecosistema (opcional). Con URL, cada tirada pide
 # permiso a Core y le publica recibos y certificaciones; si Core no contesta,
 # la tirada no arranca. Token por app solo en MODEL_DRIFT_CORE_TOKEN.
-# core_url: http://127.0.0.1:8000
+# core_url: http://127.0.0.1:8720
