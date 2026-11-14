@@ -211,7 +211,8 @@ def test_thresholds_are_configurable_and_not_probabilities() -> None:
 def test_only_qualified_equivalence_can_skip(shadow: bool, calibrated: bool, mandatory: bool, skipped: bool) -> None:
     base, cand, suite = _pair()
     client, _ = _client(_judgment(confidence_is_calibrated=calibrated))
-    policy = RegressionPolicy(metrics={"pass_rate": MetricRule(severity=Severity.blocking)}) if mandatory else None
+    regla = MetricRule(severity=Severity.blocking, max_drop=0.0)
+    policy = RegressionPolicy(metrics={"pass_rate": regla}) if mandatory else None
     report = compare_runs(base, cand, suite=suite, broker=client, policy=policy,
                           system1=System1Config(enabled=True, shadow_mode=shadow, allow_equivalence_skip=True))
     audit = report.semantic_review.assessments[0]

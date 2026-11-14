@@ -9,10 +9,24 @@ import json
 import math
 import re
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 _FENCE = re.compile(r"```(?:json|JSON)?\s*(.*?)```", re.DOTALL)
 _URL = re.compile(r"https?://[^\s<>\"'`\]\)}]+", re.IGNORECASE)
-_NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
+_FECHA_U_HORA = re.compile(
+    r"\b\d{4}-\d{2}-\d{2}\b"
+    r"|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b"
+    r"|\b\d{1,2}:\d{2}(?::\d{2})?\b"
+)
+_NUMBER = re.compile(
+    r"(?<![\w.,])-?(?:"
+    r"\d{1,3}(?:\.\d{3})+,\d+"      # 1.234,56
+    r"|\d{1,3}(?:,\d{3})+\.\d+"     # 1,234.56
+    r"|\d{1,3}(?:\.\d{3}){2,}"      # 1.234.567
+    r"|\d{1,3}(?:,\d{3}){2,}"       # 1,234,567
+    r"|\d+(?:[.,]\d+)?"             # 42 / 42,3 / 42.3
+    r")(?![\w]|[.,]\d)"
+)
 _SQL_FENCE = re.compile(r"```(?:sql|SQL)?\s*(.*?)```", re.DOTALL)
 
 
@@ -23,6 +37,39 @@ def normalize_text(value: str) -> str:
     de lo que se compara y convertiría un oráculo en una heurística.
     """
     return re.sub(r"\s+", " ", value).strip().casefold()
+
+
+def extract_numbers(text: str) -> list[float]:
+    """Números del texto, en orden, entendiendo miles y decimales en español e inglés.
+
+    Las fechas y las horas se descartan antes de buscar. Un separador único
+    («1.234», «1,234») se lee como decimal: es ambiguo y se mantiene el
+    comportamiento anterior.
+    """
+    limpio = _FECHA_U_HORA.sub(" ", text)
+    valores: list[float] = []
+    for bruto in _NUMBER.findall(limpio):
+        puntos, comas = bruto.count("."), bruto.count(",")
+        if puntos and comas:
+            if bruto.rfind(",") > bruto.rfind("."):
+                bruto = bruto.replace(".", "").replace(",", ".")
+            else:
+                bruto = bruto.replace(",", "")
+        elif puntos > 1:
+            bruto = bruto.replace(".", "")
+        elif comas > 1:
+            bruto = bruto.replace(",", "")
+        else:
+            bruto = bruto.replace(",", ".")
+        valores.append(float(bruto))
+    return valores
+
+
+def normalize_url(url: str) -> str:
+    """Forma canónica para cotejar citas: esquema y host en minúsculas, sin
+    fragmento y sin barra final. La ruta y la consulta se respetan tal cual."""
+    partes = urlsplit(url.strip().rstrip(".,;:)"))
+    return urlunsplit((partes.scheme.lower(), partes.netloc.lower(), partes.path.rstrip("/"), partes.query, ""))
 
 
 def strip_code_fences(text: str) -> str:

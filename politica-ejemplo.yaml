@@ -13,6 +13,8 @@ blocking:
   pass_rate:
     max_drop_pp: 0
     minimum_practical_effect_pp: 2
+    # Un solo caso con regresión relevante bloquea, aunque la media aguante.
+    max_regressed_cases: 0
 
 warning:
   latency_ms:

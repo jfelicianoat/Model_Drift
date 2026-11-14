@@ -16,13 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.11", "3.13"]
+        python-version: ["3.11", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Preparar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -38,9 +38,22 @@ jobs:
       - name: Mypy
         run: python -m mypy
 
-      - name: Pruebas y cobertura
-        # El umbral vive en pyproject (fail_under). No se baja para dejar pasar
-        # una entrega: si una entrega no llega, le faltan pruebas.
+      - name: Preparar servidor gráfico virtual (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb xauth
+
+      - name: Pruebas y cobertura (Linux con pantalla virtual)
+        if: runner.os == 'Linux'
+        # Las pruebas Tk necesitan DISPLAY. Sin Xvfb, se saltan 37 casos de GUI,
+        # fallan 2 subprocess Tk y cae la cobertura por debajo de fail_under.
+        # No rebajamos el umbral ni marcamos fallos como xfail.
+        run: xvfb-run -a python -m pytest tests/ --cov=model_drift --cov-report=term-missing
+
+      - name: Pruebas y cobertura (Windows)
+        if: runner.os == 'Windows'
+        # El umbral vive en pyproject (fail_under). No se baja.
         run: python -m pytest tests/ --cov=model_drift --cov-report=term-missing
 
       - name: Comprobar que la suite de ejemplo sigue cargando

@@ -7,7 +7,7 @@ import jsonschema
 
 from model_drift.oracles.base import BaseAssertion
 from model_drift.oracles.tipos import AssertionResult, EvaluationInput, EvaluationServices
-from model_drift.oracles.utilidades import _NUMBER, extract_json, resolve_path
+from model_drift.oracles.utilidades import extract_json, extract_numbers, resolve_path
 
 
 class JsonValidAssertion(BaseAssertion):
@@ -81,11 +81,10 @@ class NumericCloseAssertion(BaseAssertion):
     pick: Literal["first", "last"] = "last"
 
     def _evaluate(self, data: EvaluationInput, services: EvaluationServices) -> AssertionResult:
-        matches = _NUMBER.findall(data.text)
-        if not matches:
+        valores = extract_numbers(data.text)
+        if not valores:
             return self._result(False, "la salida no contiene ningún número")
-        raw = matches[0] if self.pick == "first" else matches[-1]
-        actual = float(raw.replace(",", "."))
+        actual = valores[0] if self.pick == "first" else valores[-1]
         delta = abs(actual - self.expected)
         if delta <= self.tolerance:
             return self._result(True, score=delta)

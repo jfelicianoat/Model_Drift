@@ -162,7 +162,7 @@ Con suficientes casos, una diferencia de 0,3 pp sale significativa y no le impor
 | **No significativo** | `no_detectado` | `relevante_no_concluyente` |
 | **Significativo** | `detectado_irrelevante` | `detectado_relevante` |
 
-El veredicto operativo sale de una `regression_policy` declarada, con métricas bloqueantes y de aviso. **No hay score global**: cuando unas métricas mejoran y otras empeoran, el resultado es `trade_off_detected` con el desglose, y la decisión es de quien escribió la política.
+El veredicto operativo sale de una `regression_policy` declarada, con métricas bloqueantes y de aviso. **No hay score global**: cuando unas métricas mejoran y otras empeoran, el resultado es `trade_off_detected` con el desglose, y la decisión es de quien escribió la política. Una métrica bloqueante excedida bloquea siempre, aunque otra mejore. Las tolerancias `max_drop` y `max_increase_pct` se comparan con el efecto **medio** de los casos; `max_regressed_cases` cuenta casos sueltos con regresión relevante (0 = basta uno para incumplir), para que un caso crítico no se diluya en la media.
 
 ### 4. El evaluador forma parte del instrumento
 

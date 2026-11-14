@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from model_drift.domain import (
     ChangeDirection,
@@ -53,12 +53,29 @@ class MetricRule(BaseModel):
     #: Caída máxima tolerada, en las unidades de la métrica (puntos de tasa
     #: para proporciones: 0.02 = 2 pp).
     max_drop: float | None = None
-    #: Subida máxima tolerada, en fracción (0.15 = 15 %). Para latencia y coste.
-    max_increase_pct: float | None = None
+    #: Subida máxima tolerada, en fracción (0.15 = 15 %); máximo 5.0. En la
+    #: forma corta del YAML se escribe en porcentaje (15). Para latencia y coste.
+    max_increase_pct: float | None = Field(default=None, ge=0.0, le=5.0)
+    #: Número máximo de casos con regresión relevante que se tolera. `None`
+    #: (por defecto) no aplica este criterio; 0 significa que un solo caso con
+    #: regresión relevante ya incumple, por mucho que la media aguante.
+    max_regressed_cases: int | None = Field(default=None, ge=0)
     #: Efecto mínimo de interés (SESOI). Por debajo, un cambio significativo se
     #: informa como `detectado_irrelevante` y no dispara el veredicto.
     minimum_practical_effect: float = 0.0
     description: str = ""
+
+    @model_validator(mode="after")
+    def tolerancia_requerida(self) -> MetricRule:
+        sin_tolerancia = (
+            self.max_drop is None and self.max_increase_pct is None and self.max_regressed_cases is None
+        )
+        if self.severity is not Severity.informative and sin_tolerancia:
+            raise ValueError(
+                f"una regla '{self.severity.value}' necesita al menos una tolerancia "
+                "(max_drop, max_increase_pct o max_regressed_cases): sin ella nunca incumple"
+            )
+        return self
 
     def worsens(self, effect: float) -> bool:
         """Si un efecto (candidata - base) va en la dirección mala."""
@@ -203,7 +220,10 @@ class RunVerdictReport(BaseModel):
                 + ". La decisión depende de la política, no de la herramienta."
             )
         if self.verdict is RunVerdict.blocked:
-            return "Bloqueado por: " + ", ".join(self.blocking_exceeded) + "."
+            texto = "Bloqueado por: " + ", ".join(self.blocking_exceeded) + "."
+            if self.improved:
+                texto += " Mejoran: " + ", ".join(self.improved) + " (no compensa una métrica bloqueante)."
+            return texto
         if self.verdict is RunVerdict.warning:
             return "Avisos en: " + ", ".join(self.warnings_raised) + "."
         if self.verdict is RunVerdict.indeterminado:
@@ -238,9 +258,10 @@ def build_metric_verdict(
     base = sum(bases) / len(bases) if bases else None
     candidato = sum(candidatos) / len(candidatos) if candidatos else None
 
-    # La relevancia de la métrica la marca el caso más severo que tenga: una
-    # regresión relevante en un solo prompt crítico no puede diluirse en la
-    # media de cincuenta prompts que no cambiaron.
+    # La RELEVANCIA de la métrica la marca su caso más severo. La TOLERANCIA
+    # (`max_drop`, `max_increase_pct`) se compara con el efecto medio: para que
+    # un solo caso crítico bloquee aunque la media aguante, la política declara
+    # `max_regressed_cases`.
     relevancia = PracticalSignificance.no_detectado
     orden = {
         PracticalSignificance.no_detectado: 0,
@@ -252,8 +273,16 @@ def build_metric_verdict(
         if orden[item.practical_significance] > orden[relevancia]:
             relevancia = item.practical_significance
 
+    regresiones_relevantes = sum(
+        1
+        for item in usables
+        if item.change_direction is ChangeDirection.regresion
+        and item.practical_significance is PracticalSignificance.detectado_relevante
+    )
     empeora = rule.worsens(efecto)
-    excede = rule.exceeds_tolerance(efecto, base) and relevancia is PracticalSignificance.detectado_relevante
+    excede_media = rule.exceeds_tolerance(efecto, base) and relevancia is PracticalSignificance.detectado_relevante
+    excede_casos = rule.max_regressed_cases is not None and regresiones_relevantes > rule.max_regressed_cases
+    excede = excede_media or excede_casos
 
     return MetricVerdict(
         metric=metric,
@@ -266,7 +295,7 @@ def build_metric_verdict(
         practical_significance=relevancia,
         n_regressions=regresiones,
         n_improvements=mejoras,
-        detail=f"{len(usables)} casos comparables",
+        detail=f"{len(usables)} casos comparables; {regresiones_relevantes} con regresión relevante",
     )
 
 
@@ -304,10 +333,12 @@ def evaluate_policy(
             f"{policy.max_indeterminate_ratio:.0%} tolerado: la tirada no concluye"
         )
         veredicto = RunVerdict.indeterminado
+    elif bloqueantes:
+        # Una métrica bloqueante excedida bloquea siempre. Que otra métrica
+        # mejore no la compensa: el trade-off es solo para métricas no bloqueantes.
+        veredicto = RunVerdict.blocked
     elif mejoran and empeoran:
         veredicto = RunVerdict.trade_off_detected
-    elif bloqueantes:
-        veredicto = RunVerdict.blocked
     elif avisos:
         veredicto = RunVerdict.warning
     else:

@@ -12,7 +12,7 @@ from pydantic import Field
 
 from model_drift.oracles.base import BaseAssertion
 from model_drift.oracles.tipos import AssertionResult, EvaluationInput, EvaluationServices
-from model_drift.oracles.utilidades import _URL
+from model_drift.oracles.utilidades import _URL, normalize_text, normalize_url
 
 
 class CitationsGroundedAssertion(BaseAssertion):
@@ -29,8 +29,8 @@ class CitationsGroundedAssertion(BaseAssertion):
     require_at_least_one: bool = False
 
     def _evaluate(self, data: EvaluationInput, services: EvaluationServices) -> AssertionResult:
-        citadas = {url.rstrip(".,;:)") for url in _URL.findall(data.text)}
-        disponibles = {url.rstrip(".,;:)") for url in data.sources}
+        citadas = {normalize_url(url) for url in _URL.findall(data.text)}
+        disponibles = {normalize_url(url) for url in data.sources}
         if not citadas:
             if self.require_at_least_one:
                 return self._result(False, "no cita ninguna fuente")
@@ -55,16 +55,30 @@ class AbstentionAssertion(BaseAssertion):
             "no consta",
             "no aparece",
             "no se menciona",
-            "no dispongo",
             "no puedo determinar",
             "no está en el contexto",
             "no hay información",
+            "no tengo datos",
+            "no tengo información",
+            "no dispongo de",
+            "no lo sé",
+            "no puedo responder",
+            "no puedo confirmar",
+            "no se indica",
+            "no se especifica",
+            "no figura",
+            "sin información suficiente",
+            "no hay datos",
+            "i don't know",
+            "not mentioned",
+            "no information",
+            "cannot determine",
         ]
     )
 
     def _evaluate(self, data: EvaluationInput, services: EvaluationServices) -> AssertionResult:
-        texto = data.text.casefold()
-        abstiene = any(phrase.casefold() in texto for phrase in self.phrases)
+        texto = normalize_text(data.text)
+        abstiene = any(normalize_text(phrase) in texto for phrase in self.phrases)
         if abstiene == self.should_abstain:
             return self._result(True)
         if self.should_abstain:

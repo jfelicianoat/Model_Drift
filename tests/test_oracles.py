@@ -291,3 +291,123 @@ def test_agregacion_con_fallo(servicios: EvaluationServices) -> None:
 def test_agregacion_todo_correcto(servicios: EvaluationServices) -> None:
     resultados = [JsonValidAssertion().evaluate(_entrada('{"a":1}'), servicios)]
     assert aggregate_pass(resultados) == (True, "")
+
+
+# --------------------------------------------------------------------------
+# Plan 13-nov: MD-04 (números), MD-05/06 (SQL), MD-07 (URL), MD-09 (abstención)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("texto", "esperado"),
+    [
+        ("el resultado es 42,3", [42.3]),
+        ("sin números", []),
+        ("1 y luego 99", [1.0, 99.0]),
+        ("Total: 1.234,56 EUR", [1234.56]),
+        ("Total: 1,234.56 USD", [1234.56]),
+        ("Población 1.234.567 habitantes", [1234567.0]),
+        ("valor 1.234", [1.234]),
+        ("a fecha 2026-10-05 el saldo es 17", [17.0]),
+        ("el 05/10/2026 a las 14:30 subió 3,5", [3.5]),
+        ("temperatura -5 grados", [-5.0]),
+        ("rango 10-20", [10.0, 20.0]),
+        ("versión v2 y 7 casos", [7.0]),
+        ("termina en 42.", [42.0]),
+        ("12, 13 y 14", [12.0, 13.0, 14.0]),
+    ],
+)
+def test_extract_numbers_entiende_miles_y_descarta_fechas(texto: str, esperado: list[float]) -> None:
+    from model_drift.oracles.utilidades import extract_numbers
+
+    assert extract_numbers(texto) == pytest.approx(esperado)
+
+
+def _bd_dos_filas(tmp_path: Path) -> Path:
+    ruta = tmp_path / "t.sqlite"
+    conexion = sqlite3.connect(ruta)
+    conexion.execute("CREATE TABLE t (id INTEGER, total REAL)")
+    conexion.executemany("INSERT INTO t VALUES (?, ?)", [(1, 1.0), (2, 2.0)])
+    conexion.commit()
+    conexion.close()
+    return ruta
+
+
+def test_sql_deniega_attach_y_no_crea_ficheros(tmp_path: Path) -> None:
+    _bd_dos_filas(tmp_path)
+    servicios = EvaluationServices(resolver=FixtureResolver(tmp_path))
+    otro = tmp_path / "otro.db"
+    aserto = SqlResultAssertion(database="fixture://t.sqlite", expected=[])
+    resultado = aserto.evaluate(_entrada(f"ATTACH DATABASE '{otro.as_posix()}' AS o"), servicios)
+    assert not resultado.passed and "not authorized" in resultado.reason
+    assert not otro.exists()
+
+
+def test_sql_corta_una_cte_infinita(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+
+    from model_drift.oracles import sql as modulo_sql
+
+    monkeypatch.setattr(modulo_sql, "_PLAZO_CONSULTA_S", 0.5)
+    _bd_dos_filas(tmp_path)
+    servicios = EvaluationServices(resolver=FixtureResolver(tmp_path))
+    aserto = SqlResultAssertion(database="fixture://t.sqlite", expected=[[1]])
+    inicio = time.monotonic()
+    resultado = aserto.evaluate(
+        _entrada("WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM r) SELECT count(*) FROM r"), servicios
+    )
+    assert not resultado.passed and "interrupted" in resultado.reason
+    assert time.monotonic() - inicio < 10
+
+
+def test_sql_libera_el_fichero_al_terminar(tmp_path: Path) -> None:
+    ruta = _bd_dos_filas(tmp_path)
+    servicios = EvaluationServices(resolver=FixtureResolver(tmp_path))
+    aserto = SqlResultAssertion(database="fixture://t.sqlite", expected=[[1, 1.0], [2, 2.0]])
+    assert aserto.evaluate(_entrada("SELECT id, total FROM t"), servicios).passed
+    ruta.unlink()
+
+
+def test_sql_compara_enteros_y_reales_por_valor(tmp_path: Path) -> None:
+    _bd_dos_filas(tmp_path)
+    servicios = EvaluationServices(resolver=FixtureResolver(tmp_path))
+    consulta = _entrada("SELECT sum(id) FROM t")
+    assert SqlResultAssertion(database="fixture://t.sqlite", expected=[[3.0]]).evaluate(consulta, servicios).passed
+    assert not SqlResultAssertion(database="fixture://t.sqlite", expected=[[4]]).evaluate(consulta, servicios).passed
+
+
+@pytest.mark.parametrize(
+    ("citada", "pasa"),
+    [
+        ("https://x.es/a", True),
+        ("https://x.es/a#seccion", True),
+        ("https://x.es/A", False),
+        ("https://otro.es/a", False),
+    ],
+)
+def test_citas_normalizan_host_barra_y_fragmento(servicios: EvaluationServices, citada: str, pasa: bool) -> None:
+    aserto = CitationsGroundedAssertion()
+    resultado = aserto.evaluate(_entrada(f"según {citada} es así", sources=["https://X.es/a/"]), servicios)
+    assert resultado.passed is pasa
+
+
+@pytest.mark.parametrize(
+    ("texto", "abstiene"),
+    [
+        ("No tengo datos suficientes para responder.", True),
+        ("Lo siento, no lo sé.", True),
+        ("En el documento no se indica la fecha.", True),
+        ("No puedo\nconfirmar   esa cifra.", True),
+        ("I don't know the answer.", True),
+        ("El importe no figura en las fuentes.", True),
+        ("La factura asciende a 1.200 euros.", False),
+        ("El contrato se firmó el 3 de marzo.", False),
+        ("Sí, el informe recomienda subir el precio.", False),
+        ("La capital es Madrid.", False),
+        ("Hay tres clientes con deuda.", False),
+        ("Según la nota, el plazo es de 30 días.", False),
+    ],
+)
+def test_abstencion_dicha_de_formas_distintas(servicios: EvaluationServices, texto: str, abstiene: bool) -> None:
+    resultado = AbstentionAssertion(should_abstain=True).evaluate(_entrada(texto), servicios)
+    assert resultado.passed is abstiene
